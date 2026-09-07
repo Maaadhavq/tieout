@@ -20,10 +20,33 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import random
+import threading
+import time
 from dataclasses import dataclass
 
 PROMPT_VERSION = "v3"
-DEFAULT_MODEL = os.environ.get("TIEOUT_MODEL", "gemini-2.0-flash")
+
+# Hosted models come and go, and a 500-page run will meet a 503. The extractor
+# walks this list per page and drops to the next on an unavailable model, so a
+# capacity spike degrades quality slightly instead of failing the ingest.
+# Override the head of the list with TIEOUT_MODEL.
+MODEL_CHAIN = [
+    m for m in [
+        os.environ.get("TIEOUT_MODEL"),
+        "gemini-3.6-flash",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+    ] if m
+]
+DEFAULT_MODEL = MODEL_CHAIN[0]
+
+RETRYABLE = ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "internal error", "500")
+MAX_ATTEMPTS_PER_MODEL = 3
+# A model that is down stays down for a while. Without this, every page pays
+# the full retry ladder on each dead model before reaching a live one -- about
+# 21 seconds of pure sleeping per page, which is most of a long run.
+DISABLE_AFTER_CONSECUTIVE_FAILURES = 3
 
 SYSTEM = """You read one page of a document and list the checkable factual claims on it.
 
@@ -116,11 +139,18 @@ class PageResult:
     facts: list[dict]
     cached: bool
     error: str | None = None
+    model: str | None = None
 
 
-def cache_key(page_text: str, model: str) -> str:
-    h = hashlib.sha256(f"{PROMPT_VERSION}\x00{model}\x00{page_text}".encode("utf-8")).hexdigest()
-    return h
+def cache_key(page_text: str, model: str | None = None) -> str:
+    """Keyed on the prompt and the page text only, NOT the model.
+
+    The committed cache is meant to be replayable by an evaluator who may not
+    have access to the same hosted model we ran against. Which model actually
+    produced an entry is recorded inside it instead.
+    """
+    return hashlib.sha256(
+        f"{PROMPT_VERSION}\x00{page_text}".encode("utf-8")).hexdigest()
 
 
 class Extractor:
@@ -128,11 +158,36 @@ class Extractor:
                  offline: bool = False):
         self.store = store
         self.model = model
+        self.chain = [model] + [m for m in MODEL_CHAIN if m != model]
         self.offline = offline
         self._client = None
         self._api_key = api_key or os.environ.get("GEMINI_API_KEY") or ""
         self.calls = 0
         self.cache_hits = 0
+        self.model_used: dict[str, int] = {}
+        self.retries = 0
+        self._lock = threading.Lock()
+        self._consecutive_failures: dict[str, int] = {}
+        self.disabled: set[str] = set()
+
+    def _note_failure(self, model: str) -> None:
+        with self._lock:
+            n = self._consecutive_failures.get(model, 0) + 1
+            self._consecutive_failures[model] = n
+            if n >= DISABLE_AFTER_CONSECUTIVE_FAILURES and model not in self.disabled:
+                self.disabled.add(model)
+                print(f"      ! {model} unavailable after {n} consecutive failures — "
+                      f"skipping it for the rest of this run")
+
+    def _note_success(self, model: str) -> None:
+        with self._lock:
+            self._consecutive_failures[model] = 0
+            self.model_used[model] = self.model_used.get(model, 0) + 1
+
+    def _live_chain(self) -> list[str]:
+        with self._lock:
+            live = [m for m in self.chain if m not in self.disabled]
+        return live or self.chain[-1:]  # never disable the last resort
 
     @property
     def client(self):
@@ -147,7 +202,7 @@ class Extractor:
         return self._client
 
     def extract_page(self, page_no: int, page_text: str) -> PageResult:
-        key = cache_key(page_text, self.model)
+        key = cache_key(page_text)
         hit = self.store.cache_get(key)
         if hit is not None:
             self.cache_hits += 1
@@ -158,24 +213,41 @@ class Extractor:
 
         from google.genai import types
 
-        try:
-            resp = self.client.models.generate_content(
-                model=self.model,
-                contents=f"PAGE {page_no}\n\n{page_text}",
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM,
-                    response_mime_type="application/json",
-                    response_schema=RESPONSE_SCHEMA,
-                    temperature=0.0,
-                ),
-            )
-            data = json.loads(resp.text or "{}")
-        except Exception as exc:  # noqa: BLE001 - surfaced per page, never fatal
-            return PageResult(page_no, [], cached=False, error=f"{type(exc).__name__}: {exc}")
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM,
+            response_mime_type="application/json",
+            response_schema=RESPONSE_SCHEMA,
+            temperature=0.0,
+        )
+        last = "no model attempted"
 
-        self.calls += 1
-        self.store.cache_put(key, data)
-        return PageResult(page_no, data.get("facts", []), cached=False)
+        for model in self._live_chain():
+            for attempt in range(MAX_ATTEMPTS_PER_MODEL):
+                try:
+                    resp = self.client.models.generate_content(
+                        model=model,
+                        contents=f"PAGE {page_no}\n\n{page_text}",
+                        config=config,
+                    )
+                    data = json.loads(resp.text or "{}")
+                except Exception as exc:  # noqa: BLE001 - never fatal to the run
+                    last = f"{type(exc).__name__}: {exc}"
+                    if any(t in str(exc) for t in RETRYABLE):
+                        self.retries += 1
+                        if attempt == MAX_ATTEMPTS_PER_MODEL - 1:
+                            self._note_failure(model)
+                            break
+                        time.sleep(1.5 * (2 ** attempt) + random.random())
+                        continue
+                    self._note_failure(model)  # 404: the model is gone entirely
+                    break
+                self.calls += 1
+                self._note_success(model)
+                data["_model"] = model
+                self.store.cache_put(key, data)
+                return PageResult(page_no, data.get("facts", []), cached=False, model=model)
+
+        return PageResult(page_no, [], cached=False, error=last)
 
     def extract_pages(self, pages, workers: int = 6, progress=None) -> list[PageResult]:
         out: list[PageResult] = []

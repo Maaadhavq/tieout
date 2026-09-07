@@ -37,51 +37,105 @@ RECONCILE_HINT = {
 }
 
 
-def _fact_line(f: dict) -> str:
-    bits = [f["entity_raw"], f["metric_raw"]]
-    if f.get("period_raw"):
-        bits.append(f["period_raw"])
-    import json
-    for k, v in (json.loads(f.get("basis_json") or "{}")).items():
-        bits.append(str(v).replace("_", " "))
-    value = f.get("value_raw") or f.get("value_text") or "—"
-    unit = f.get("unit_raw") or ""
-    return f"{' · '.join(bits)} = {value} {unit}".strip()
-
-
 def _source(f: dict, ev: dict | None) -> str:
     if not ev:
         return f["doc_id"]
     return f"{ev.get('filename', ev.get('doc_id', ''))} p.{ev['page_no']}"
 
 
+_SYMBOL = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}
+
+
+def _group(raw: str) -> str:
+    """Add thousands separators when the source did not, so a long figure is
+    readable next to one that was already grouped."""
+    if "," in raw or not raw:
+        return raw
+    try:
+        whole, _, frac = raw.partition(".")
+        if not whole.lstrip("-+").isdigit() or abs(int(whole)) < 10000:
+            return raw
+        return f"{int(whole):,}" + (f".{frac}" if frac else "")
+    except (ValueError, TypeError):
+        return raw
+
+
+def _delta(v, a: dict) -> str:
+    if not v.value_delta:
+        return ""
+    unit = "percentage points" if a.get("unit_canon") == "percent" else ""
+    mag = a.get("magnitude_raw")
+    shown = v.value_delta
+    if unit:
+        return f" They differ by {shown:g} {unit}."
+    if mag:
+        from ..normalize.units import MAGNITUDES
+        shown = v.value_delta / MAGNITUDES.get(mag, 1)
+        return f" They differ by {_group(f'{shown:,.10g}')} {mag}."
+    return f" They differ by {shown:,.10g}."
+
+
+def _val(f: dict) -> str:
+    """Render a value the way its document wrote it, magnitude included.
+
+    Without this a reader sees "81415.38 INR" and has no idea it is the same
+    figure as "8142 crore" -- which is exactly the comparison being explained.
+    """
+    raw = f.get("value_raw")
+    if raw is None:
+        return str(f.get("value_text") or "—")
+    raw = _group(str(raw))
+    unit = f.get("unit_canon")
+    if unit == "percent":
+        return f"{raw}%"
+    sym = _SYMBOL.get(unit, "")
+    mag = f.get("magnitude_raw")
+    if sym and mag:
+        return f"{sym}{raw} {mag}"
+    if sym:
+        return f"{sym}{raw}"
+    return f"{raw} {mag}".strip() if mag else str(raw)
+
+
+def _sources(a: dict, b: dict, ev_a: dict | None, ev_b: dict | None) -> tuple[str, bool]:
+    """Two documents, or one document twice? The phrasing differs."""
+    sa, sb = _source(a, ev_a), _source(b, ev_b)
+    if sa == sb:
+        return sa, True
+    return f"{sa} and {sb}", False
+
+
+def _metric_phrase(a: dict, b: dict) -> str:
+    """Name both metrics when the labels differ, so the reader is not told two
+    facts 'both report real GDP growth' when one of them reports GVA."""
+    if a["metric_raw"].strip().lower() == b["metric_raw"].strip().lower():
+        return f"{a['entity_raw']} · {a['metric_raw']}"
+    return f"{a['entity_raw']} · {a['metric_raw']} against {b['metric_raw']}"
+
+
 def explain(v: Verdict, a: dict, b: dict, ev_a: dict | None = None,
             ev_b: dict | None = None) -> str:
     src_a, src_b = _source(a, ev_a), _source(b, ev_b)
-    shared = f"{a['entity_raw']} · {a['metric_raw']}"
+    where, same_place = _sources(a, b, ev_a, ev_b)
+    shared = _metric_phrase(a, b)
+    both = "Both statements" if same_place else "Both documents"
+    va, vb = _val(a), _val(b)
 
     if v.label == CORROBORATES:
-        val = a.get("value_raw") or a.get("value_text")
-        other = b.get("value_raw") or b.get("value_text")
-        same_words = str(val).strip() == str(other).strip()
-        lead = (
-            f"Both documents state {shared} for {a.get('period_raw') or 'the same period'}"
+        lead = f"{both} state {shared} for {a.get('period_raw') or 'the same period'}"
+        if va == vb:
+            return f"{lead} as {va}. Corroborated across {where}."
+        return (
+            f"{lead}. {src_a} writes it {va} and {src_b} writes it {vb}; normalized to a "
+            f"common unit those are the same figure, so the two sources corroborate "
+            f"each other."
         )
-        if same_words:
-            return (f"{lead} as {val} {a.get('unit_raw') or ''}. "
-                    f"Corroborated across {src_a} and {src_b}.").replace("  ", " ")
-        return (f"{lead}. {src_a} writes it {val} {a.get('unit_raw') or ''} and "
-                f"{src_b} writes it {other} {b.get('unit_raw') or ''}; normalized to a common "
-                f"unit these are the same figure, so the two sources corroborate each other."
-                ).replace("  ", " ")
 
     if v.label == CONTRADICTS:
-        delta = f" They differ by {v.value_delta:g}." if v.value_delta else ""
+        delta = _delta(v, a)
         return (
-            f"{src_a} and {src_b} make the same claim about {shared} for "
-            f"{a.get('period_raw')} — same unit, same basis — but state different values: "
-            f"{a.get('value_raw') or a.get('value_text')} against "
-            f"{b.get('value_raw') or b.get('value_text')}.{delta} "
+            f"{where} make the same claim about {shared} for {a.get('period_raw')} — same "
+            f"unit, same basis — but state different values: {va} against {vb}.{delta} "
             f"Nothing in either document explains the gap, so this is recorded as a genuine "
             f"disagreement."
         )
@@ -91,9 +145,11 @@ def explain(v: Verdict, a: dict, b: dict, ev_a: dict | None = None,
         phrase = DIMENSION_PHRASE.get(dim, f"they differ on {dim}")
         detail = next((c.detail for c in v.checks if c.dimension == dim), "")
         hint = RECONCILE_HINT.get(dim, "")
+        lead = (f"{where} reports {shared} twice ({va} and {vb})" if same_place
+                else f"{where} both report {shared} ({va} and {vb})")
         return (
-            f"{src_a} and {src_b} both report {shared}, and every part of the claim matches "
-            f"except one: {phrase} ({detail}). This is not a contradiction. {hint}"
+            f"{lead}, and every part of the claim matches except one: {phrase} "
+            f"({detail}). This is not a contradiction. {hint}"
         ).strip()
 
     if v.label == INSUFFICIENT:
@@ -101,23 +157,15 @@ def explain(v: Verdict, a: dict, b: dict, ev_a: dict | None = None,
         unknown = next((c for c in v.checks if c.status == "unknown"), None)
         if unknown:
             return (
-                f"Both documents appear to report {shared}, but the comparison cannot be "
-                f"completed: {unknown.detail}. Reported as insufficient evidence rather than "
-                f"as agreement or contradiction."
+                f"{both} appear to report {shared}, but the comparison cannot be completed: "
+                f"{unknown.detail}. Reported as insufficient evidence rather than as "
+                f"agreement or contradiction."
             )
         return (
-            f"Both documents appear to report {shared}, but {basis_mod.HUMAN.get(dim, dim)} "
-            f"could not be established from the text, so no relationship is asserted."
+            f"{both} appear to report {shared}, but {basis_mod.HUMAN.get(dim, dim)} could "
+            f"not be established from the text, so no relationship is asserted."
         )
 
     if v.label == UNRELATED:
         return f"Not comparable: {v.dimension} differs."
     return ""
-
-
-def short_headline(v: Verdict) -> str:
-    if v.label == RECONCILED:
-        return f"Reconciled — {basis_mod.HUMAN.get(v.dimension, v.dimension)}"
-    if v.label == INSUFFICIENT:
-        return "Insufficient evidence"
-    return v.label.replace("_", " ").title()

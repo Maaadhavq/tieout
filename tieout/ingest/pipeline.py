@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..normalize import basis as basis_mod
-from ..normalize.entities import entity_key
+from ..normalize.entities import entity_key, is_resolvable
 from ..normalize.metrics import metric_key
 from ..normalize.periods import parse_period
 from ..normalize.units import parse_quantity
@@ -126,6 +126,13 @@ def _store_one(store, doc_id: str, page, raw: dict) -> str | None:
     if not ent_raw or not met_raw:
         return _reject(store, doc_id, page.number, "no_entity_or_metric", raw)
 
+    # "our Company", "the Group" -- a first-person reference names nothing on
+    # its own, and blocking on it would compare every filing's "company" facts
+    # against every other's. See entities.GENERIC.
+    ekey = entity_key(ent_raw)
+    if not is_resolvable(ekey):
+        return _reject(store, doc_id, page.number, "unresolvable_entity", raw)
+
     # ---- THE GATE ----------------------------------------------------
     g = locate(page, quote)
     if not g.ok:
@@ -161,7 +168,7 @@ def _store_one(store, doc_id: str, page, raw: dict) -> str | None:
     fact = {
         "fact_id": new_id("f"), "doc_id": doc_id, "evidence_id": ev_id,
         "fact_kind": kind,
-        "entity_raw": ent_raw, "entity_key": entity_key(ent_raw),
+        "entity_raw": ent_raw, "entity_key": ekey,
         "metric_raw": met_raw, "metric_key": mkey,
         "value_raw": raw.get("value"),
         "value_num": qty.value if qty else None,

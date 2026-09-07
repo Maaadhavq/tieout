@@ -16,10 +16,25 @@ LEGAL_SUFFIXES = {
 
 HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "shri", "smt", "sri", "mx"}
 
-# Institutional short forms that appear as both an acronym and a full name in
-# the same corpus. Expanded, not hard-coded to any document: the map is
-# populated from what the extractor emits (see build_alias_hint).
-_ACRONYM = re.compile(r"\(([A-Z][A-Za-z&.]{1,9})\)")
+# Entities that name nothing on their own. Filings are written in the first
+# person -- "our Company", "the Group", "the Board" -- and the extractor
+# reproduces that even when told not to. Left alone these are catastrophic for
+# blocking: every "company" fact in every document lands in one block and gets
+# compared against every other, which is how a system starts reporting that
+# two unrelated firms contradict each other.
+#
+# They are rejected at ingest with reason `unresolvable_entity` and counted.
+# Resolving them to the document's subject is the right fix and is listed as
+# a next step; guessing is not.
+GENERIC = {
+    "the", "a", "an", "this", "that", "these", "those",
+    "we", "us", "our", "it", "its", "they", "them", "their",
+    "company", "group", "board", "management", "board of directors",
+    "entity", "organisation", "organization", "firm", "business", "issuer",
+    "bank", "government", "state", "country", "sector", "industry", "market",
+    "subsidiary", "parent", "holding", "auditor", "auditors", "shareholders",
+    "members", "committee", "authority", "regulator",
+}
 
 
 def _strip_accents(s: str) -> str:
@@ -42,13 +57,18 @@ def entity_key(raw: str | None) -> str:
     return " ".join(parts) or s
 
 
-def alias_hint(raw: str | None) -> str | None:
-    """'Reserve Bank of India (RBI)' -> 'rbi'. Returns a second key the same
-    text also licenses, so an acronym and its expansion land in one block."""
-    if not raw:
-        return None
-    m = _ACRONYM.search(str(raw))
-    return m.group(1).lower().replace(".", "") if m else None
+def is_resolvable(key: str) -> bool:
+    """Does this key name something in particular?
+
+    A key is unresolvable when it is generic on its own, or when stripping the
+    generic words from it leaves nothing -- "the Company", "our Group".
+    """
+    if not key or len(key) < 2:
+        return False
+    if key in GENERIC:
+        return False
+    remainder = [w for w in key.split() if w not in GENERIC]
+    return bool(remainder)
 
 
 def same_entity(a: str, b: str) -> tuple[bool, str]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,31 +21,45 @@ def new_id(prefix: str) -> str:
 
 
 class Store:
+    """One connection, guarded by a lock.
+
+    Extraction runs pages concurrently and every worker writes to the cache, so
+    the connection is shared across threads (`check_same_thread=False`). Without
+    the lock, two threads interleave inside a transaction and one of them raises
+    `cannot commit - no transaction is active` partway through a long ingest.
+    """
+
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        self.conn = sqlite3.connect(self.path, check_same_thread=False)
+        self.conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+        self._lock = threading.RLock()
+        with self._lock:
+            self.conn.executescript(SCHEMA.read_text(encoding="utf-8"))
 
     # -- generic helpers -------------------------------------------------
     def q(self, sql: str, args: Iterable[Any] = ()) -> list[dict]:
-        return [dict(r) for r in self.conn.execute(sql, tuple(args)).fetchall()]
+        with self._lock:
+            return [dict(r) for r in self.conn.execute(sql, tuple(args)).fetchall()]
 
     def one(self, sql: str, args: Iterable[Any] = ()) -> dict | None:
         rows = self.q(sql, args)
         return rows[0] if rows else None
 
     def run(self, sql: str, args: Iterable[Any] = ()) -> None:
-        self.conn.execute(sql, tuple(args))
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(sql, tuple(args))
+            self.conn.commit()
 
     def insert(self, table: str, row: dict) -> None:
         cols = ", ".join(row)
         marks = ", ".join("?" for _ in row)
-        self.conn.execute(
-            f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({marks})", tuple(row.values())
-        )
-        self.conn.commit()
+        with self._lock:
+            self.conn.execute(
+                f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({marks})",
+                tuple(row.values()),
+            )
+            self.conn.commit()
 
     # -- domain helpers --------------------------------------------------
     def doc_by_hash(self, sha: str) -> dict | None:

@@ -8,7 +8,6 @@ was written, never from a fixed epsilon.
 """
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass
 
@@ -142,9 +141,3 @@ def format_value(q: Quantity) -> str:
         sym = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}[q.unit]
         return f"{sym}{q.value:,.10g}"
     return f"{q.value:,.10g}"
-
-
-def sig_figs(q: Quantity) -> int:
-    if q.value == 0:
-        return 1
-    return max(1, int(math.floor(math.log10(abs(q.value)))) - int(math.floor(math.log10(q.tolerance * 2))) + 1)

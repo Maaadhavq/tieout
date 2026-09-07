@@ -50,7 +50,7 @@ class Adjudicator:
     def __init__(self, store, model: str | None = None, api_key: str | None = None,
                  offline: bool = False, budget: int = MAX_ADJUDICATIONS):
         self.store = store
-        self.model = model or os.environ.get("TIEOUT_MODEL", "gemini-2.0-flash")
+        self.model = model or os.environ.get("TIEOUT_MODEL", "gemini-2.5-flash")
         self._api_key = api_key or os.environ.get("GEMINI_API_KEY") or ""
         self.offline = offline or not self._api_key
         self.budget = budget

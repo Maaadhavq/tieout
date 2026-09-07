@@ -104,8 +104,3 @@ def render_page_png(path: str | Path, page_no: int, dpi: int = RENDER_DPI) -> by
         return pix.tobytes("png")
     finally:
         doc.close()
-
-
-def scale_for(page: Page, dpi: int = RENDER_DPI) -> float:
-    """PDF points -> rendered pixels."""
-    return dpi / 72.0

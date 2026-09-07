@@ -228,3 +228,72 @@ hallucination rate for the reference set, where it would be trivially zero.
 
 **Cost:** two extra code paths, and the need to be explicit everywhere about
 which corpus is on screen.
+
+---
+
+## D11 — First-person entities are refused, not resolved
+**2026-09-07**
+
+Measured on 1,670 extracted facts: 163 of them (9.8%) had an entity of
+"Company", "Group", "Our Company", "the Company" or similar. Filings are
+written in the first person and the extractor reproduces that, despite the
+prompt telling it not to.
+
+**Considered:** resolve them to the document's subject; leave them and let
+them sort themselves out.
+
+**Why refuse:** blocking is keyed on the entity. Left alone, every filing's
+"company" facts land in one block and get compared against every other
+filing's — which is precisely how a system starts reporting that two unrelated
+companies contradict each other. This is worse than a missing fact, because it
+is a confident wrong answer.
+
+Resolving them properly needs a document-level subject, which the extractor
+does not currently carry. It is the right fix and is listed in Limitations.
+
+**Cost:** ~10% of extracted facts are dropped, including real ones. The
+rejection reason `unresolvable_entity` is counted alongside the others, so the
+loss is visible rather than silent.
+
+---
+
+## D12 — One lock around the SQLite connection
+**2026-09-07**
+
+The first full run died partway through the fourth document with
+`cannot commit - no transaction is active`. Extraction runs pages on a thread
+pool and every worker writes to the cache through one shared connection
+(`check_same_thread=False`), so two threads interleaved inside a transaction.
+
+**Considered:** a connection per thread; a write queue.
+
+**Why:** a single `RLock` is four lines and this is not a write-throughput
+problem — the work is waiting on a remote model, not on SQLite. Verified with
+600 concurrent writes across 16 threads.
+
+**Cost:** writes serialise. Irrelevant at this scale; would matter if
+extraction ever became local and fast.
+
+---
+
+## D13 — A model that keeps failing is dropped for the run
+**2026-09-07**
+
+The extractor walks a chain of models and falls through on failure. Measured
+on the live run, 61 of the first 78 pages were served by the *last* model in
+the chain: the two preferred ones were returning 503 constantly, and every
+page was paying the full retry ladder on each of them first — about 21 seconds
+of sleeping per page, which was most of the wall clock.
+
+A model that exhausts its retries is now skipped for the rest of the run (the
+last resort is never skipped). Throughput went from 5.4 to about 30
+pages/minute.
+
+**Cost:** a model that was only briefly down stays out for the whole run. A
+time-based cooldown would be kinder; a run is short enough that it does not
+matter.
+
+**Related, and worth stating plainly:** the free-tier daily quota ran out
+partway through the corpus. 250 of 487 candidate pages were extracted. That is
+a budget limit, not a system limit — the cache means resuming costs nothing —
+but every number reported from this run is over those 250 pages, not all 487.

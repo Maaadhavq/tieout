@@ -68,10 +68,14 @@ def build(store, incremental_doc_id: str | None = None, offline: bool = False,
             answer = adj.resolve(a["metric_key"], a["metric_raw"],
                                  b["metric_key"], b["metric_raw"])
             if answer is None:
+                # An unanswered alias question is a question, not a finding.
+                # Writing it as INSUFFICIENT_EVIDENCE would bury the real
+                # results under thousands of near-miss metric pairs, so it is
+                # counted and reported in /api/stats instead.
                 report.unresolved += 1
-            else:
-                report.adjudications += 1
-                v = compare(a, b, adj.aliases)
+                continue
+            report.adjudications += 1
+            v = compare(a, b, adj.aliases)
 
         if v.label in SUPPRESSED:
             report.suppressed += 1

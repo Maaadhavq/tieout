@@ -22,11 +22,31 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(ROOT / ".env")
-except ImportError:
-    pass
+def _load_env(path: Path) -> None:
+    """Read .env ourselves, tolerating the encodings Windows produces.
+
+    PowerShell's `>` redirect writes UTF-16LE, so `echo KEY=... > .env` yields a
+    file python-dotenv cannot decode -- it raises UnicodeDecodeError and the key
+    silently never loads. Worth 15 lines to not lose an evaluator here.
+    """
+    if not path.exists():
+        return
+    raw = path.read_bytes()
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        text = raw.decode("utf-16")
+    elif raw[:3] == b"\xef\xbb\xbf":
+        text = raw.decode("utf-8-sig")
+    else:
+        text = raw.decode("utf-8", errors="replace")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+_load_env(ROOT / ".env")
 
 from tieout.api import app as api_app  # noqa: E402
 from tieout.ingest.extract import Extractor  # noqa: E402
@@ -75,6 +95,13 @@ def main() -> int:
     print(f"  database   {db}")
     print(f"  mode       {'cached replay (no API calls)' if offline else 'live extraction'}\n")
 
+    if args.demo and not store.q("SELECT 1 FROM extract_cache LIMIT 1"):
+        print("! --demo replays a committed extraction cache, and this database has none.")
+        print("  That happens if data/demo.db was not cloned with the repo.")
+        print("  `python run.py --gold` reproduces the four cases with no API key,")
+        print("  or set GEMINI_API_KEY and run `python run.py` to extract for real.\n")
+        return 1
+
     if args.gold:
         from tieout.goldstore import build_gold_store
         if not store.q("SELECT 1 FROM facts LIMIT 1"):
@@ -109,14 +136,21 @@ def main() -> int:
         print(f"\n  ingest took {time.time() - t0:.1f}s "
               f"({extractor.calls} model calls, {extractor.cache_hits} cache hits)")
 
-        print("\n  relating facts…")
-        rep = build_mod.rebuild_all(store, offline=offline) if args.rebuild \
-            else build_mod.build(store, offline=offline)
-        print(f"  {rep.pairs_considered} pairs considered "
-              f"(naive would be {rep.pairs_if_naive}), {rep.written} relationships written, "
-              f"{rep.adjudications} adjudication calls")
-        for label, n in sorted(rep.by_label.items(), key=lambda kv: -kv[1]):
-            print(f"      {label:26s} {n}")
+        existing_rels = store.one("SELECT COUNT(*) c FROM relationships")["c"]
+        if existing_rels and not args.rebuild:
+            print(f"\n  {existing_rels} relationships already computed — "
+                  f"pass --rebuild to recompute")
+            rep = None
+        else:
+            print("\n  relating facts…")
+            rep = build_mod.rebuild_all(store, offline=offline) if args.rebuild \
+                else build_mod.build(store, offline=offline)
+        if rep:
+            print(f"  {rep.pairs_considered} pairs considered "
+                  f"(naive would be {rep.pairs_if_naive}), {rep.written} relationships written, "
+                  f"{rep.adjudications} adjudication calls")
+            for label, n in sorted(rep.by_label.items(), key=lambda kv: -kv[1]):
+                print(f"      {label:26s} {n}")
 
     s = store.stats()
     print(f"\n  {s['facts_kept']} facts · {s['facts_rejected']} rejected by the grounding gate "

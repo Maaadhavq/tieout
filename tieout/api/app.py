@@ -141,17 +141,7 @@ def fact(fact_id: str):
 
 
 # ------------------------------------------------------------ relationships
-@app.get("/api/relationships")
-def relationships(label: str | None = None, entity: str | None = None,
-                  dimension: str | None = None, min_confidence: float = 0.0,
-                  limit: int = Query(500, le=5000)):
-    where, args = ["r.confidence >= ?"], [min_confidence]
-    if label:
-        where.append("r.label = ?"); args.append(label)
-    if dimension:
-        where.append("r.dimension = ?"); args.append(dimension)
-    if entity:
-        where.append("fa.entity_key LIKE ?"); args.append(f"%{entity.lower()}%")
+def _relationships(where: list[str], args: list, limit: int) -> list[dict]:
     sql = f"""
       SELECT r.*, fa.entity_raw, fa.metric_raw,
              fa.value_raw AS a_value, fa.value_text AS a_text, fa.unit_raw AS a_unit,
@@ -173,16 +163,30 @@ def relationships(label: str | None = None, entity: str | None = None,
     return store().q(sql, args + [limit])
 
 
+@app.get("/api/relationships")
+def relationships(label: str | None = None, entity: str | None = None,
+                  dimension: str | None = None, min_confidence: float = 0.0,
+                  limit: int = Query(500, le=5000)):
+    where, args = ["r.confidence >= ?"], [min_confidence]
+    if label:
+        where.append("r.label = ?"); args.append(label)
+    if dimension:
+        where.append("r.dimension = ?"); args.append(dimension)
+    if entity:
+        where.append("fa.entity_key LIKE ?"); args.append(f"%{entity.lower()}%")
+    return _relationships(where, args, limit)
+
+
 @app.get("/api/relationships/{rel_id}")
 def relationship(rel_id: str):
-    rows = relationships(limit=5000)
-    for r in rows:
-        if r["rel_id"] == rel_id:
-            r["rule_trace"] = json.loads(r["rule_trace_json"])
-            r["fact_a_full"] = fact(r["fact_a"])
-            r["fact_b_full"] = fact(r["fact_b"])
-            return r
-    raise HTTPException(404, "no such relationship")
+    rows = _relationships(["r.rel_id = ?"], [rel_id], 1)
+    if not rows:
+        raise HTTPException(404, "no such relationship")
+    r = rows[0]
+    r["rule_trace"] = json.loads(r["rule_trace_json"])
+    r["fact_a_full"] = fact(r["fact_a"])
+    r["fact_b_full"] = fact(r["fact_b"])
+    return r
 
 
 @app.get("/api/rejects")

@@ -109,3 +109,16 @@ def test_state_facts_reconcile_over_time():
     assert v.label == RECONCILED
     text = explain(v, FACTS["D4"], FACTS["D5"])
     assert "contradiction" in text.lower()
+
+
+def test_first_person_entities_are_refused():
+    """Filings say "our Company" and "the Group". Those name nothing on their
+    own, and blocking on them would compare every filing's facts against every
+    other filing's. They must never become an entity key."""
+    from tieout.normalize.entities import entity_key, is_resolvable
+    for bad in ("our Company", "the Group", "the Board", "we", "it", "Company",
+                "the", "management", "our subsidiary"):
+        assert not is_resolvable(entity_key(bad)), f"{bad!r} was accepted as an entity"
+    for good in ("Delhivery Limited", "India", "Spoton Logistics", "Sahil Barua",
+                 "Reserve Bank of India", "International Monetary Fund"):
+        assert is_resolvable(entity_key(good)), f"{good!r} was wrongly refused"
