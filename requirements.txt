@@ -1,0 +1,8 @@
+PyMuPDF>=1.24
+fastapi>=0.110
+uvicorn[standard]>=0.27
+google-genai>=0.3
+python-dotenv>=1.0
+pyyaml>=6.0
+python-multipart>=0.0.9
+pytest>=8.0

@@ -1,0 +1,325 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap">
+  <style>
+    /* Tie-Out palette — warm paper ground, ink text, one chrome accent,
+       four semantic hues sharing chroma/lightness and varying only in hue.
+       ground   oklch(0.985 0.004 95)   panel  #ffffff
+       rule     oklch(0.905 0.005 95)   ink    oklch(0.24 0.012 250)
+       muted    oklch(0.54 0.012 250)   accent oklch(0.44 0.075 205)
+       corrob   oklch(0.55 0.11 150)    contra oklch(0.55 0.15 27)
+       reconc   oklch(0.60 0.115 75)    insuff oklch(0.55 0.03 250) */
+    body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; }
+    a { color: oklch(0.44 0.075 205); } a:hover { color: oklch(0.34 0.075 205); }
+    .num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: oklch(0.985 0.004 95); color: oklch(0.24 0.012 250); overflow: hidden;">
+
+  <!-- ── top bar ─────────────────────────────────────────────── -->
+  <div style="display: flex; align-items: center; gap: 24px; padding: 0 20px; height: 52px; background: #ffffff; border-bottom: 1px solid oklch(0.905 0.005 95); flex-shrink: 0;">
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="oklch(0.44 0.075 205)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 2.75h6.5L15 7v10.25H4z"></path>
+        <path d="M10.25 2.75V7H15"></path>
+        <path d="M6.75 12.4l2 2 4-4.6"></path>
+      </svg>
+      <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">Tie&#8209;Out</span>
+    </div>
+    <div style="width: 1px; height: 20px; background: oklch(0.905 0.005 95);"></div>
+    <div class="num" style="font-size: 12px; color: oklch(0.54 0.012 250); display: flex; gap: 16px;">
+      <span>6 documents</span><span>511 pages</span><span>247 facts</span><span>1,912 pairs compared</span>
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; gap: 6px;">
+      <div style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 5px; border: 1px solid oklch(0.55 0.11 150 / 0.35); background: oklch(0.55 0.11 150 / 0.07); font-size: 11.5px; font-weight: 500; color: oklch(0.42 0.09 150);">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: oklch(0.55 0.11 150);"></span>Corroborates<span class="num" style="opacity: 0.65;">38</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 5px; border: 1px solid oklch(0.55 0.15 27 / 0.35); background: oklch(0.55 0.15 27 / 0.07); font-size: 11.5px; font-weight: 500; color: oklch(0.45 0.13 27);">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: oklch(0.55 0.15 27);"></span>Contradicts<span class="num" style="opacity: 0.65;">4</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 5px; border: 1.5px solid oklch(0.60 0.115 75); background: oklch(0.60 0.115 75 / 0.13); font-size: 11.5px; font-weight: 600; color: oklch(0.42 0.10 75);">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: oklch(0.60 0.115 75);"></span>Reconciled<span class="num" style="opacity: 0.65;">17</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 5px; border: 1px solid oklch(0.905 0.005 95); background: #ffffff; font-size: 11.5px; font-weight: 500; color: oklch(0.54 0.012 250);">
+        <span style="width: 6px; height: 6px; border-radius: 50%; background: oklch(0.55 0.03 250);"></span>Insufficient<span class="num" style="opacity: 0.65;">23</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── body ────────────────────────────────────────────────── -->
+  <div style="flex-grow: 1; display: grid; grid-template-columns: 660px minmax(0, 1fr); min-height: 0;">
+
+    <!-- ── left: fact grid ─────────────────────────────────── -->
+    <div style="display: flex; flex-direction: column; background: #ffffff; border-right: 1px solid oklch(0.905 0.005 95); min-height: 0;">
+      <div style="display: flex; align-items: baseline; gap: 8px; padding: 12px 16px 9px;">
+        <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: oklch(0.54 0.012 250);">Fact ledger</span>
+        <span class="num" style="font-size: 11px; color: oklch(0.62 0.012 250);">filtered · entity contains &ldquo;india&rdquo;, &ldquo;delhivery&rdquo;</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 26px; background: oklch(0.975 0.004 95); border-top: 1px solid oklch(0.905 0.005 95); border-bottom: 1px solid oklch(0.905 0.005 95); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: oklch(0.58 0.012 250);">
+        <div></div><div>Entity</div><div>Metric</div><div style="text-align: right;">Value</div><div>Period</div><div>Source</div>
+      </div>
+
+      <!-- rows -->
+      <div style="display: flex; flex-direction: column;">
+
+        <!-- row 1 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">1</div>
+          <div>India</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">real GDP growth</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.955 0.004 95); color: oklch(0.56 0.012 250); flex-shrink: 0;">realized</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">6.5&#8202;%</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">2024&#8209;25</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">RBI AR&#8202;·&#8202;p8</div>
+        </div>
+
+        <!-- row 2 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px; background: oklch(0.55 0.11 150 / 0.05); box-shadow: inset 2px 0 0 oklch(0.55 0.11 150);">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">2</div>
+          <div>India</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">real GDP growth</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.955 0.004 95); color: oklch(0.56 0.012 250); flex-shrink: 0;">realized</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">6.5&#8202;%</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">FY2024/25</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">IMF AIV&#8202;·&#8202;p10</div>
+        </div>
+
+        <!-- row 3 — selected -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-top: 1px solid oklch(0.60 0.115 75); border-bottom: 1px solid oklch(0.60 0.115 75); font-size: 12.5px; background: oklch(0.60 0.115 75 / 0.11); box-shadow: inset 2px 0 0 oklch(0.60 0.115 75);">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.52 0.06 75);">3</div>
+          <div style="font-weight: 600;">India</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600;">real GDP growth</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.60 0.115 75 / 0.22); color: oklch(0.40 0.10 75); font-weight: 600; flex-shrink: 0;">1st adv est</span></div>
+          <div class="num" style="text-align: right; font-weight: 600;">6.4&#8202;%</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.36 0.012 250);">FY25</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.48 0.012 250);">Econ Svy&#8202;·&#8202;p4</div>
+        </div>
+
+        <!-- row 4 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">4</div>
+          <div>India</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">real GVA growth</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.955 0.004 95); color: oklch(0.56 0.012 250); flex-shrink: 0;">basic prices</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">6.4&#8202;%</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">2024&#8209;25</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">RBI AR&#8202;·&#8202;p26</div>
+        </div>
+
+        <!-- row 5 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">5</div>
+          <div>India</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">real GDP growth</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.55 0.15 27 / 0.13); color: oklch(0.45 0.13 27); flex-shrink: 0;">projection</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">6.5&#8202;%</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">2025&#8209;26</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">RBI AR&#8202;·&#8202;p17</div>
+        </div>
+
+        <!-- row 6 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">6</div>
+          <div>India</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">real GDP growth</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.55 0.15 27 / 0.13); color: oklch(0.45 0.13 27); flex-shrink: 0;">projection</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">6.6&#8202;%</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">FY2025/26</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">IMF AIV&#8202;·&#8202;p13</div>
+        </div>
+
+        <!-- section break -->
+        <div style="display: flex; align-items: center; gap: 8px; padding: 0 16px; height: 24px; background: oklch(0.975 0.004 95); border-top: 1px solid oklch(0.905 0.005 95); border-bottom: 1px solid oklch(0.945 0.004 95);">
+          <span class="num" style="font-size: 10px; letter-spacing: 0.04em; color: oklch(0.60 0.012 250);">delhivery limited &middot; 3 documents</span>
+        </div>
+
+        <!-- row 7 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">7</div>
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Delhivery Ltd</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">revenue from operations</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.955 0.004 95); color: oklch(0.56 0.012 250); flex-shrink: 0;">standalone</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">&#8377;74,540.82&#8239;mn</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">FY24</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">AR FY24&#8202;·&#8202;p22</div>
+        </div>
+
+        <!-- row 8 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">8</div>
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Delhivery Ltd</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">revenue from operations</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.955 0.004 95); color: oklch(0.56 0.012 250); flex-shrink: 0;">consolidated</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">&#8377;81,415.38&#8239;mn</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">FY24</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">AR FY24&#8202;·&#8202;p22</div>
+        </div>
+
+        <!-- row 9 -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px; background: oklch(0.55 0.11 150 / 0.05); box-shadow: inset 2px 0 0 oklch(0.55 0.11 150);">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">9</div>
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Delhivery Ltd</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">revenue from services</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.44 0.075 205 / 0.13); color: oklch(0.38 0.075 205); flex-shrink: 0;">alias?</span></div>
+          <div class="num" style="text-align: right; font-weight: 500;">&#8377;8,142&#8239;cr</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">FY24</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">Q4 deck&#8202;·&#8202;p6</div>
+        </div>
+
+        <!-- row 10 — state fact -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">10</div>
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">S. S. Sujan</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">board role &middot; Delhivery</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.955 0.004 95); color: oklch(0.56 0.012 250); flex-shrink: 0;">state</span></div>
+          <div style="text-align: right; font-size: 11px; font-weight: 500;">active</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">2022&#8209;05</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">Prosp&#8202;·&#8202;p88</div>
+        </div>
+
+        <!-- row 11 — state fact -->
+        <div style="display: grid; grid-template-columns: 30px 132px minmax(0, 1fr) 96px 92px 82px; align-items: center; padding: 0 16px; height: 34px; border-bottom: 1px solid oklch(0.945 0.004 95); font-size: 12.5px;">
+          <div class="num" style="font-size: 10.5px; color: oklch(0.72 0.012 250);">11</div>
+          <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">S. S. Sujan</div>
+          <div style="display: flex; align-items: center; gap: 7px; min-width: 0;"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">board role &middot; Delhivery</span><span class="num" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: oklch(0.955 0.004 95); color: oklch(0.56 0.012 250); flex-shrink: 0;">state</span></div>
+          <div style="text-align: right; font-size: 11px; font-weight: 500;">resigned</div>
+          <div class="num" style="font-size: 11.5px; color: oklch(0.44 0.012 250);">2023&#8209;08&#8209;24</div>
+          <div class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">AR FY24&#8202;·&#8202;p33</div>
+        </div>
+
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 14px; padding: 0 16px; height: 30px; border-top: 1px solid oklch(0.905 0.005 95); background: oklch(0.975 0.004 95);">
+        <span class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">247 facts kept</span>
+        <span class="num" style="font-size: 10.5px; color: oklch(0.55 0.13 27);">14 rejected &mdash; quote not found in source</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="num" style="font-size: 10.5px; color: oklch(0.58 0.012 250);">hallucination rate 5.4%</span>
+      </div>
+    </div>
+
+    <!-- ── right: reasoning + evidence ─────────────────────── -->
+    <div style="display: flex; flex-direction: column; min-height: 0; min-width: 0;">
+
+      <!-- relationship / rule trace -->
+      <div style="padding: 14px 20px 16px; background: #ffffff; border-bottom: 1px solid oklch(0.905 0.005 95);">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+          <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: oklch(0.54 0.012 250);">Relationship</span>
+          <span class="num" style="font-size: 10.5px; color: oklch(0.66 0.012 250);">rel_0091 &middot; decided by rule</span>
+        </div>
+
+        <!-- the two facts -->
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;">
+          <div style="display: grid; grid-template-columns: 18px minmax(0, 1fr) 74px; align-items: center; gap: 10px; padding: 8px 11px; border: 1px solid oklch(0.905 0.005 95); border-radius: 6px; background: oklch(0.985 0.004 95);">
+            <span class="num" style="font-size: 11px; font-weight: 600; color: oklch(0.54 0.012 250);">A</span>
+            <span style="font-size: 12.5px;">India &middot; real GDP growth &middot; <span class="num">2024&#8209;25</span> &middot; GDP at constant prices &middot; <span style="font-weight: 600;">realized</span></span>
+            <span class="num" style="text-align: right; font-size: 13px; font-weight: 600;">6.5&#8202;%</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 18px minmax(0, 1fr) 74px; align-items: center; gap: 10px; padding: 8px 11px; border: 1px solid oklch(0.60 0.115 75 / 0.45); border-radius: 6px; background: oklch(0.60 0.115 75 / 0.07);">
+            <span class="num" style="font-size: 11px; font-weight: 600; color: oklch(0.44 0.10 75);">B</span>
+            <span style="font-size: 12.5px;">India &middot; real GDP growth &middot; <span class="num">FY25</span> &middot; GDP at constant prices &middot; <span style="font-weight: 600; color: oklch(0.40 0.10 75);">first advance estimate</span></span>
+            <span class="num" style="text-align: right; font-size: 13px; font-weight: 600;">6.4&#8202;%</span>
+          </div>
+        </div>
+
+        <!-- rule trace -->
+        <div style="display: flex; flex-direction: column; gap: 0; border: 1px solid oklch(0.905 0.005 95); border-radius: 6px; overflow: hidden;">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 6px 11px; background: oklch(0.975 0.004 95); border-bottom: 1px solid oklch(0.905 0.005 95);">
+            <span class="num" style="font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.56 0.012 250);">Comparability trace</span>
+            <span class="num" style="font-size: 10px; color: oklch(0.66 0.012 250);">5 dimensions &middot; 0 LLM calls</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 20px 78px minmax(0, 1fr); align-items: center; gap: 10px; padding: 5px 11px; font-size: 12px; border-bottom: 1px solid oklch(0.955 0.004 95);">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="oklch(0.55 0.11 150)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg>
+            <span class="num" style="font-size: 11px; color: oklch(0.54 0.012 250);">entity</span>
+            <span class="num" style="font-size: 11.5px;">india &#8801; india</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 20px 78px minmax(0, 1fr); align-items: center; gap: 10px; padding: 5px 11px; font-size: 12px; border-bottom: 1px solid oklch(0.955 0.004 95);">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="oklch(0.55 0.11 150)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg>
+            <span class="num" style="font-size: 11px; color: oklch(0.54 0.012 250);">metric</span>
+            <span class="num" style="font-size: 11.5px;">real_gdp_growth</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 20px 78px minmax(0, 1fr); align-items: center; gap: 10px; padding: 5px 11px; font-size: 12px; border-bottom: 1px solid oklch(0.955 0.004 95);">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="oklch(0.55 0.11 150)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg>
+            <span class="num" style="font-size: 11px; color: oklch(0.54 0.012 250);">unit</span>
+            <span class="num" style="font-size: 11.5px;">percent</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 20px 78px minmax(0, 1fr); align-items: center; gap: 10px; padding: 5px 11px; font-size: 12px; border-bottom: 1px solid oklch(0.955 0.004 95); background: oklch(0.55 0.11 150 / 0.045);">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="oklch(0.55 0.11 150)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg>
+            <span class="num" style="font-size: 11px; color: oklch(0.54 0.012 250);">period</span>
+            <span class="num" style="font-size: 11.5px;">&ldquo;2024&#8209;25&rdquo; &#8801; &ldquo;FY25&rdquo; &rarr; 2024&#8209;04&#8209;01 &hellip; 2025&#8209;03&#8209;31</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 20px 78px minmax(0, 1fr); align-items: center; gap: 10px; padding: 5px 11px; font-size: 12px; border-bottom: 1px solid oklch(0.955 0.004 95); background: oklch(0.60 0.115 75 / 0.10);">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="oklch(0.60 0.115 75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7"></path></svg>
+            <span class="num" style="font-size: 11px; font-weight: 600; color: oklch(0.42 0.10 75);">vintage</span>
+            <span class="num" style="font-size: 11.5px; font-weight: 500;">realized &nbsp;vs&nbsp; first_advance_estimate</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 20px 78px minmax(0, 1fr); align-items: center; gap: 10px; padding: 5px 11px; font-size: 12px;">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="oklch(0.62 0.012 250)" stroke-width="2" stroke-linecap="round"><path d="M3.5 7h7"></path></svg>
+            <span class="num" style="font-size: 11px; color: oklch(0.54 0.012 250);">value</span>
+            <span class="num" style="font-size: 11.5px; color: oklch(0.50 0.012 250);">6.5 vs 6.4 &nbsp;&middot;&nbsp; &Delta; 0.1&#8239;pp &nbsp;&middot;&nbsp; not compared &mdash; frames differ</span>
+          </div>
+        </div>
+
+        <!-- verdict -->
+        <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 13px; border-radius: 6px; background: oklch(0.60 0.115 75 / 0.11); border: 1px solid oklch(0.60 0.115 75 / 0.4);">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.01em; color: oklch(0.38 0.10 75);">CONTEXTUALLY RECONCILED</span>
+            <span class="num" style="font-size: 10.5px; color: oklch(0.46 0.06 75);">dimension: data vintage</span>
+          </div>
+          <div style="flex-grow: 1;"></div>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+            <span class="num" style="font-size: 15px; font-weight: 600; color: oklch(0.38 0.10 75);">0.88</span>
+            <span class="num" style="font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; color: oklch(0.50 0.06 75);">confidence</span>
+          </div>
+        </div>
+
+        <p style="margin: 11px 0 0; font-family: 'IBM Plex Serif', ui-serif, Georgia, serif; font-size: 12.5px; line-height: 1.55; color: oklch(0.34 0.012 250); max-width: 68ch; text-wrap: pretty;">
+          Both documents report real GDP growth for India over the same period &mdash; the Economic Survey writes it &ldquo;FY25&rdquo;, the RBI &ldquo;2024&#8209;25&rdquo;. The values differ because the Survey quotes the <em>first advance estimate</em> published in January&nbsp;2025, while the RBI reports the realized figure. These are different vintages of the same measurement, not conflicting claims.
+        </p>
+      </div>
+
+      <!-- evidence -->
+      <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; background: oklch(0.985 0.004 95);">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 11px 20px 9px;">
+          <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: oklch(0.54 0.012 250);">Source evidence</span>
+          <span class="num" style="font-size: 10.5px; color: oklch(0.66 0.012 250);">quote verified against page text &middot; exact match</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 0 20px 16px; min-height: 0;">
+
+          <!-- evidence A -->
+          <div style="display: flex; flex-direction: column; border: 1px solid oklch(0.905 0.005 95); border-radius: 7px; background: #ffffff; overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 7px 11px; border-bottom: 1px solid oklch(0.945 0.004 95); background: oklch(0.978 0.004 95);">
+              <span class="num" style="font-size: 10px; font-weight: 600; color: oklch(0.54 0.012 250);">A</span>
+              <span class="num" style="font-size: 10.5px; color: oklch(0.44 0.012 250); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">02-rbi-annual-report-2024-25.pdf</span>
+              <div style="flex-grow: 1;"></div>
+              <span class="num" style="font-size: 10px; color: oklch(0.60 0.012 250);">p.&#8202;8</span>
+            </div>
+            <div style="padding: 13px 14px; font-family: 'IBM Plex Serif', ui-serif, Georgia, serif; font-size: 11.5px; line-height: 1.72; color: oklch(0.40 0.012 250);">
+              <span style="color: oklch(0.68 0.012 250);">&hellip; sustained government capital expenditure. Although real gross domestic product (GDP)</span><sup style="font-size: 8px;">3</sup> <span style="background: oklch(0.60 0.115 75 / 0.32); box-shadow: 0 0 0 2px oklch(0.60 0.115 75 / 0.32); border-radius: 2px; color: oklch(0.20 0.012 250);">growth moderated to 6.5 per cent in 2024&#8209;25</span><span style="color: oklch(0.68 0.012 250);">, India remained the fastest growing major economy. Economic activity was supported by an improvement in consumption demand and net exports on the expenditure side &hellip;</span>
+            </div>
+          </div>
+
+          <!-- evidence B -->
+          <div style="display: flex; flex-direction: column; border: 1px solid oklch(0.60 0.115 75 / 0.45); border-radius: 7px; background: #ffffff; overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 7px 11px; border-bottom: 1px solid oklch(0.60 0.115 75 / 0.3); background: oklch(0.60 0.115 75 / 0.07);">
+              <span class="num" style="font-size: 10px; font-weight: 600; color: oklch(0.44 0.10 75);">B</span>
+              <span class="num" style="font-size: 10.5px; color: oklch(0.40 0.012 250); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">01-india-economic-survey-2024-25.pdf</span>
+              <div style="flex-grow: 1;"></div>
+              <span class="num" style="font-size: 10px; color: oklch(0.50 0.06 75);">p.&#8202;4</span>
+            </div>
+            <div style="padding: 13px 14px; font-family: 'IBM Plex Serif', ui-serif, Georgia, serif; font-size: 11.5px; line-height: 1.72; color: oklch(0.40 0.012 250);">
+              <span style="color: oklch(0.68 0.012 250);">&hellip; In this global context, India displayed steady economic growth. As per the </span><span style="background: oklch(0.60 0.115 75 / 0.32); box-shadow: 0 0 0 2px oklch(0.60 0.115 75 / 0.32); border-radius: 2px; color: oklch(0.20 0.012 250);">first advance estimates of national accounts, India&rsquo;s real GDP is estimated to grow by 6.4 per cent in FY25</span><span style="color: oklch(0.68 0.012 250);">. Growth in the first half of FY25 was supported by agriculture and services, with rural demand improving &hellip;</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

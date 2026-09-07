@@ -1,0 +1,163 @@
+# Gold set — hand-verified against the starter PDFs before any extractor was written.
+# Every quote below was located in the source PDF by exact string match (see docs/DECISIONS.md, D1).
+# page = 1-based PDF page index in the excerpt file (not the printed page label).
+
+facts:
+  # ---------- India macro: real GDP growth ----------
+  - id: M1
+    doc: india-macroeconomy/02-rbi-annual-report-2024-25-excerpt.pdf
+    page: 8
+    quote: "growth moderated to 6.5 per cent in 2024-25"
+    entity: India
+    metric: real GDP growth
+    value: 6.5
+    unit: percent
+    period: "2024-25"
+    basis: {price_basis: constant, measure: GDP, vintage: realized}
+
+  - id: M2
+    doc: india-macroeconomy/03-imf-india-2025-article-iv-excerpt.pdf
+    page: 10
+    quote: "India's real GDP grew by 6.5 percent in FY2024/25"
+    entity: India
+    metric: real GDP growth
+    value: 6.5
+    unit: percent
+    period: "FY2024/25"
+    basis: {price_basis: constant, measure: GDP, vintage: realized}
+
+  - id: M3
+    doc: india-macroeconomy/01-india-economic-survey-2024-25-excerpt.pdf
+    page: 4
+    quote: "India's real GDP is estimated to grow by 6.4 per cent in FY25"
+    entity: India
+    metric: real GDP growth
+    value: 6.4
+    unit: percent
+    period: "FY25"
+    basis: {price_basis: constant, measure: GDP, vintage: first_advance_estimate}
+
+  - id: M4
+    doc: india-macroeconomy/02-rbi-annual-report-2024-25-excerpt.pdf
+    page: 26
+    quote: "expanded by 6.4 per cent in 2024-25"
+    entity: India
+    metric: real GVA growth
+    value: 6.4
+    unit: percent
+    period: "2024-25"
+    basis: {price_basis: constant, valuation: basic prices, measure: GVA, vintage: realized}
+
+  - id: M5
+    doc: india-macroeconomy/02-rbi-annual-report-2024-25-excerpt.pdf
+    page: 17
+    quote: "real GDP growth for 2025-26 is projected at 6.5 per cent"
+    entity: India
+    metric: real GDP growth
+    value: 6.5
+    unit: percent
+    period: "2025-26"
+    basis: {price_basis: constant, measure: GDP, vintage: projection}
+
+  - id: M6
+    doc: india-macroeconomy/03-imf-india-2025-article-iv-excerpt.pdf
+    page: 13
+    quote: "real GDP growth is projected at 6.6 percent in FY2025/26"
+    entity: India
+    metric: real GDP growth
+    value: 6.6
+    unit: percent
+    period: "FY2025/26"
+    basis: {price_basis: constant, measure: GDP, vintage: projection}
+
+  # ---------- Delhivery ----------
+  - id: D1
+    doc: delhivery/02-delhivery-annual-report-fy24-excerpt.pdf
+    page: 22
+    quote: "revenue from operations on standalone basis for FY24 stood at 74,540.82 million"
+    entity: Delhivery Limited
+    metric: revenue from operations
+    value: 74540.82
+    unit: INR
+    magnitude: million
+    period: "FY24"
+    basis: {consolidation: standalone}
+
+  - id: D2
+    doc: delhivery/02-delhivery-annual-report-fy24-excerpt.pdf
+    page: 22
+    quote: "revenue from operations on consolidated basis for FY24 stood at 81,415.38 million"
+    entity: Delhivery Limited
+    metric: revenue from operations
+    value: 81415.38
+    unit: INR
+    magnitude: million
+    period: "FY24"
+    basis: {consolidation: consolidated}
+
+  - id: D3
+    doc: delhivery/03-delhivery-q4-fy24-earnings-presentation.pdf
+    page: 6
+    quote: "₹8,142 Cr FY24 revenue from services"
+    entity: Delhivery Limited
+    metric: revenue from services
+    value: 8142
+    unit: INR
+    magnitude: crore
+    period: "FY24"
+    basis: {consolidation: consolidated}
+
+  - id: D4
+    doc: delhivery/01-delhivery-prospectus-2022-excerpt.pdf
+    page: 88
+    kind: state
+    quote: "Suvir Suren Sujan is a Non-Executive Nominee Director of our Company"
+    entity: Suvir Suren Sujan
+    metric: board role at Delhivery Limited
+    value_text: Non-Executive Nominee Director
+    status: active
+    period: "as of 2022-05"
+
+  - id: D5
+    doc: delhivery/02-delhivery-annual-report-fy24-excerpt.pdf
+    page: 33
+    kind: state
+    quote: "Mr. Suvir Suren Sujan, Non-Executive Director, resigned from the Board with effect from August 24, 2023."
+    entity: Suvir Suren Sujan
+    metric: board role at Delhivery Limited
+    value_text: Non-Executive Director
+    status: resigned
+    effective: "2023-08-24"
+
+pairs:
+  - [M1, M2, CORROBORATES,             "same frame; 2024-25 == FY2024/25; different publishers and phrasing"]
+  - [M1, M3, CONTEXTUALLY_RECONCILED,  "vintage: realized vs first advance estimate"]
+  - [M1, M4, CONTEXTUALLY_RECONCILED,  "measure: GDP at constant prices vs GVA at basic prices"]
+  - [M5, M6, CONTRADICTS,              "both projections for 2025-26; 6.5 vs 6.6"]
+  - [D1, D2, CONTEXTUALLY_RECONCILED,  "consolidation: standalone vs consolidated"]
+  # Rules cannot settle whether "revenue from operations" and "revenue from services"
+  # name the same quantity, so this pair is the adjudicator's job. Without the alias
+  # it must come back INSUFFICIENT_EVIDENCE, never a guess.
+  - [D2, D3, CORROBORATES,             "81,415.38 million == 8,141.5 crore ~= 8,142 crore; needs metric alias"]
+  - [D4, D5, CONTEXTUALLY_RECONCILED,  "state change over time: active in 2022, resigned 2023-08-24"]
+
+# Negative controls: must NOT be paired or must not be labelled agreement.
+non_pairs:
+  - [M3, M4, "both 6.4% for the same period and entity, but GDP vs GVA AND a different
+      estimate vintage -- two frame dimensions differ, so they are not one claim"]
+  - [M2, M6, "a realized figure for FY2024/25 and a projection for FY2025/26 differ on both
+      period and vintage; these are separate claims, not a reconciliation"]
+
+# Known extraction failures, kept honest. See README Limitations.
+known_failures:
+  - doc: india-macroeconomy/03-imf-india-2025-article-iv-excerpt.pdf
+    page: 1
+    reason: image-only cover page, no text layer; would need OCR
+  - doc: delhivery/03-delhivery-q4-fy24-earnings-presentation.pdf
+    page: 8
+    reason: >
+      column-major table text stream. Row labels and the four period columns
+      (Q4 FY22 / Q4 FY23 / Q3 FY24 / Q4 FY24) are emitted as separate runs, so a
+      flat-text extractor cannot bind a value to its period without geometry.
+      The grounding gate rejects these because the model's quote is not contiguous
+      in the page text.

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tie-Out — fact ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="var(--accent)"
+         stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 2.75h6.5L15 7v10.25H4z"/><path d="M10.25 2.75V7H15"/><path d="M6.75 12.4l2 2 4-4.6"/>
+    </svg>
+    <span>Tie&#8209;Out</span>
+  </div>
+  <div class="divider"></div>
+  <div id="corpus" class="num"></div>
+  <div class="spacer"></div>
+  <div id="filters"></div>
+  <button id="upload-btn">Add PDF</button>
+  <input id="upload-input" type="file" accept="application/pdf" hidden>
+</header>
+
+<main>
+  <section id="left">
+    <div class="section-head">
+      <h2>Fact ledger</h2>
+      <span class="note" id="ledger-note"></span>
+    </div>
+    <input id="search" type="search" placeholder="filter by entity, metric or quoted text…" autocomplete="off">
+    <div class="grid-head">
+      <div></div><div>Entity</div><div>Metric</div><div class="r">Value</div><div>Period</div><div>Source</div>
+    </div>
+    <div id="rows"></div>
+    <footer class="ledger-foot" id="ledger-foot"></footer>
+  </section>
+
+  <section id="right">
+    <div id="reasoning"></div>
+    <div id="evidence"></div>
+  </section>
+</main>
+
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

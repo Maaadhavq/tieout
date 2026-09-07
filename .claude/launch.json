@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "tieout", "runtimeExecutable": "python",
+      "runtimeArgs": ["run.py", "--gold", "--port", "8000"], "port": 8000 }
+  ]
+}

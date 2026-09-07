@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.scratch/
+tieout.db
+data/pages/
+.pytest_cache/
