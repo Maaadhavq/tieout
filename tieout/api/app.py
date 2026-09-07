@@ -90,6 +90,7 @@ async def upload(file: UploadFile = File(...)):
         "pages_skipped": report.pages_skipped,
         "facts_kept": report.kept,
         "facts_rejected": report.rejected,
+        "rejection_rate": report.rejection_rate,
         "hallucination_rate": report.hallucination_rate,
         "reject_reasons": report.reject_reasons,
         "relationships_added": rel.written,
@@ -202,12 +203,26 @@ def metrics():
 
 
 # ---------------------------------------------------------------- rendering
+def _resolve_pdf(doc: dict) -> Path | None:
+    """Find the source PDF from a stored path that may be relative to the repo,
+    absolute on another machine, or only known by filename."""
+    stored = doc.get("path") or ""
+    for candidate in (ROOT / stored, Path(stored)):
+        if stored and candidate.exists():
+            return candidate
+    matches = list((ROOT / "data").rglob(doc["filename"]))
+    return matches[0] if matches else None
+
+
 @app.get("/api/pages/{doc_id}/{page_no}.png")
 def page_png(doc_id: str, page_no: int):
     doc = store().one("SELECT * FROM documents WHERE doc_id = ?", (doc_id,))
-    if not doc or not doc.get("path") or not Path(doc["path"]).exists():
-        raise HTTPException(404, "source PDF not available")
-    png = render_page_png(doc["path"], page_no)
+    if not doc:
+        raise HTTPException(404, "no such document")
+    src = _resolve_pdf(doc)
+    if not src:
+        raise HTTPException(404, f"source PDF not found for {doc['filename']}")
+    png = render_page_png(src, page_no)
     return Response(png, media_type="image/png",
                     headers={"Cache-Control": "public, max-age=86400",
                              "X-Render-Scale": str(RENDER_DPI / 72.0)})

@@ -33,6 +33,8 @@ git clone <this repo> && cd tieout
 python -m pip install -r requirements.txt
 ```
 
+There are two corpora, and the UI always says which one is on screen.
+
 **Reproduce the four required cases with no API key:**
 
 ```bash
@@ -50,8 +52,9 @@ labels this corpus as the reference set.
 python run.py --demo
 ```
 
-Replays the committed extraction cache over all six starter PDFs — same result
-as a live run, zero API calls.
+Replays the committed extraction cache over the starter PDFs — the same
+result as a live run, zero API calls. This is the corpus the measured numbers
+below come from.
 
 **Live extraction:**
 
@@ -64,7 +67,7 @@ python run.py --paths some/other.pdf
 **Tests and evaluation:**
 
 ```bash
-python -m pytest -q                  # 69 tests, no API key needed
+python -m pytest -q                  # 80 tests, no API key needed
 python -m tieout.eval --db data/gold.db
 ```
 
@@ -162,110 +165,148 @@ extractor existed; they are not model output.
 
 ## The four required cases
 
-All four are reproducible with `python run.py --gold`. Page numbers are 1-based
-indices into the starter excerpts.
+Every one of these is in the extracted corpus — `python run.py --demo`, no API
+key — and reproducible on the hand-labelled reference set with
+`python run.py --gold`. Page numbers are 1-based indices into the excerpts.
 
 ### 1. Corroborated across documents, expressed differently
 
-**RBI Annual Report 2024-25, p.8** — "growth moderated to **6.5 per cent** in
-**2024-25**"
-**IMF Article IV 2025, p.10** — "India's real GDP grew by **6.5 percent** in
+**RBI Annual Report 2024-25, p.22** — "6.5 per cent in **2024-25**"
+**IMF Article IV 2025, p.10** — "India's real GDP grew by 6.5 percent in
 **FY2024/25**"
 
-Two institutions, two period notations, two phrasings. Same normalized frame,
-same value → **CORROBORATES** (0.93).
+Two institutions, two notations for one interval. → **CORROBORATES** (0.93).
 
-A second one crosses magnitude units: the annual report's
-`₹81,415.38 million` and the earnings deck's `₹8,142 crore` are the same figure,
-matched only after magnitude normalization and precision-aware tolerance.
+A harder one, in the same corpus: the annual report's `₹81,415.38 million`
+against the earnings deck's `₹8,142 crore` — and `₹1,266 Mn` against `₹127 Cr`
+for EBITDA. Same figures, different scales, rounded differently. No string
+matcher finds these; they match only after magnitude normalization at the
+precision the *rounder* source claimed.
 
 ### 2. A genuine contradiction
 
-**RBI Annual Report, p.17** — "real GDP growth for **2025-26** is projected at
-**6.5 per cent**"
-**IMF Article IV, p.13** — "real GDP growth is projected at **6.6 percent** in
-**FY2025/26**"
+**Economic Survey 2024-25, p.20** — "India's GDP at constant (2011-12) prices
+grew by **6.7 per cent** and 5.4 per cent in **Q1** and Q2 **FY25**"
+**RBI Annual Report 2024-25, p.24** — "real GDP rose (y-o-y) by **6.5 per
+cent** in **Q1:2024-25**"
 
-Same entity, metric, unit, period, and both are projections. Every frame check
-passes; the values differ by 0.1pp, beyond the precision either source stated.
-Nothing in either document explains the gap → **CONTRADICTS** (0.93).
+Same entity, metric, unit, price basis and measure. The two period notations
+normalise to the same quarter. The values differ by 0.2 percentage points and
+neither document explains why → **CONTRADICTS** (0.93).
+
+This one only surfaces if quarters parse correctly. An earlier version read
+`"Q1:2024-25"` as the whole of 2024-25 and reported a *different*, false
+contradiction instead; see `docs/DECISIONS.md` D14.
 
 ### 3. An apparent contradiction explained by context
 
-Three of these, on three different dimensions:
+Found on four different dimensions:
 
-- **Data vintage.** RBI p.8 says 6.5% for 2024-25; Economic Survey p.4 says
-  **6.4%** for FY25. Same country, same metric, same period — but the Survey
-  quotes the *first advance estimate* published in January 2025 and the RBI
-  reports the realized figure. Different vintages of one measurement, not rival
-  claims. → **CONTEXTUALLY_RECONCILED (data vintage)**, 0.90.
-- **Consolidation.** Delhivery's FY24 revenue is `₹74,540.82 million` standalone
-  and `₹81,415.38 million` consolidated, both on annual-report p.22.
-  → **reconciled (consolidation basis)**, 0.90.
-- **State change over time**, and non-numeric: Suvir Suren Sujan is a
-  Non-Executive Nominee Director in the 2022 prospectus (p.88) and *resigned
-  with effect from August 24, 2023* in the FY24 annual report (p.33).
-  → **reconciled (reporting period)**, 0.90.
+- **Data vintage.** Economic Survey p.14 says **6.4%** for FY25; RBI p.8 says
+  **6.5%** for 2024-25. Same country, metric and period — but the Survey quotes
+  the first advance estimate. Different vintages of one measurement, not rival
+  claims. → **reconciled (data vintage)**, 0.90.
+- **Consolidation.** Delhivery's FY24 revenue is `₹74,540.82 million`
+  standalone and `₹81,415.38 million` consolidated.
+- **Measure.** GDP growth against GVA growth — different aggregates, not
+  expected to match.
+- **Sign convention.** A loss written `2,491.86` in the narrative and
+  `(2,491.86)` in the statements is one figure, not two claims.
 
-### 4. An extraction failure, and what it costs
+And a non-numeric one, from the reference set: Suvir Suren Sujan is a
+Non-Executive Nominee Director in the 2022 prospectus (p.88) and *resigned with
+effect from August 24, 2023* in the FY24 annual report (p.33) — a state change
+over time, reconciled by the same machinery.
 
-Two, both real and both visible in the tooling:
+### 4. Extraction failures, measured
 
-- **A page with no text layer.** IMF Article IV p.1 is a scanned cover: zero
-  characters, one image. No fact can be grounded on it, so none is emitted. The
-  junk filter reports it as skipped rather than silently ignoring it. Fixing it
-  means an OCR path, which this prototype does not have.
-- **Column-major table streams.** The Delhivery earnings deck emits table row
-  labels and their four period columns as separate text runs — the reading-order
-  stream on p.8 is `Pin-code reach 18,074 18,540 18,675 18,793` with the four
-  period headers elsewhere on the page. A flat text extractor cannot bind a
-  value to its period. The grounding gate catches this class automatically,
-  because a model that stitches such a value together produces a quote that is
-  not contiguous on the page — so the fact is rejected rather than stored wrong.
-  The fix is geometry-aware table reconstruction using the word boxes already
-  being extracted for provenance; it is the first thing I would build next.
+Three classes, all visible in the tooling rather than described:
 
-The negative control matters as much: Economic Survey p.4 says **6.4%** and RBI
-p.26 says **6.4%**, same country, same period. A value-first system corroborates
-them. They are GDP and GVA — different aggregates — and the comparator suppresses
-the pair. `tests/test_compare.py` asserts this.
+- **Ungrounded claims — 72 of 1,967 (3.7%).** The model produced a quote that
+  is not in the page. The gate rejects them and `/api/rejects` shows what it
+  said.
+- **First-person entities — 163.** Filings say "our Company" and "the Group".
+  These are well-grounded facts that name nothing on their own; blocking on
+  them would compare every filing's "company" facts against every other's, so
+  they are refused. Resolving them to the document's subject is the first thing
+  I would build next.
+- **Tables lose their row headers.** All 22 remaining contradictions are
+  same-page pairs like "Borrowings 1,316.09 vs 1,697.34, same date, same page"
+  — current versus non-current, with the qualifier lost because reading order
+  flattens a table into a stream. They are reported at 45% confidence *saying
+  that*, rather than asserted. The fix is geometry-aware table reconstruction
+  from the word boxes already extracted for the highlights.
+
+A page with no text layer (IMF Article IV p.1, a scanned cover) yields nothing
+at all and is counted among the 24 pages the junk filter skipped.
+
+The negative control matters as much: Economic Survey p.4 says 6.4% and RBI
+p.26 says 6.4%, same country, same period. A value-first system corroborates
+them. They are GDP and GVA, and the comparator suppresses the pair
+(`tests/test_compare.py`).
 
 ---
 
 ## Limitations and Next Steps
 
-**Measured, on the reference set:** relationship accuracy 7/7 on labelled pairs,
-2/2 negative controls, every stored highlight verified to cover its quote
-(`tests/test_evidence_boxes.py` re-reads each rectangle out of the PDF).
+### Measured, on the corpus in `data/demo.db`
 
-**What does not work yet:**
+| | |
+|---|---|
+| documents / pages | 6 · 511 pages, 24 skipped by the junk filter |
+| pages a model answered for | **284 of 487 candidates** — the run was cut short, see below |
+| facts the model emitted | 1,967 |
+| facts kept | 1,728 |
+| facts refused by the gate | 239 (12.2%) — 163 unresolvable entity, 72 ungrounded, 4 unparseable |
+| **hallucination rate** | **3.7%** — ungrounded claims / claims emitted |
+| quote match quality | 1,714 exact, 12 fuzzy, 2 normalized (99.2% exact) |
+| distinct metrics discovered | 962, none of them hard-coded |
+| pairs compared | 2,325, against 1,492,128 if compared naively (0.16%) |
+| relationships | 31 corroborates · 22 contradicts · 178 reconciled · 374 insufficient |
+| suppressed | 387 same-document time series, 1,237 unresolved alias questions |
+| relationship accuracy | 7/7 labelled pairs, 2/2 negative controls |
 
-- **No OCR.** A scanned page yields nothing. One page of the starter set is
-  affected.
-- **Tables lose their structure.** Described above. This is the single largest
-  source of missed facts, and the reason the extractor is instructed to prefer
-  claims stated in sentences.
-- **Recall is untuned.** The gate errs towards rejecting, and the extractor is
-  capped at 12 claims per page. The system is built to be right about what it
-  reports, not to report everything.
-- **Entity resolution is deliberately shallow** — exact match or one name
+**The run is incomplete and the numbers say so.** The free-tier daily quota ran
+out partway through, so 284 of 487 candidate pages were actually read. The
+cache means resuming costs nothing, and every figure above is over the pages
+that were read, not all of them. `pages_extracted` and `pages_candidate` are
+reported separately in `/api/stats` for exactly this reason.
+
+### What does not work yet
+
+- **First-person entities are dropped, not resolved.** 163 well-grounded facts
+  lost because the document said "our Company". This is the largest single
+  source of lost recall and the first thing to fix.
+- **Tables lose their row headers**, which is where every remaining
+  contradiction comes from. Geometry-aware reconstruction using the word boxes
+  already extracted for the highlights is the fix.
+- **No OCR.** A scanned page yields nothing.
+- **Relative periods are dropped.** 97 facts said "a year ago" or "the previous
+  year" with no absolute anchor. They get no period, so any comparison
+  involving them returns `INSUFFICIENT_EVIDENCE` — honest, but it is most of
+  that bucket.
+- **Entity resolution is deliberately shallow** — exact match, or one name
   contained in the other. It will not merge "Reserve Bank of India" with "RBI"
-  unless a document writes them together, and it will not notice that two
-  differently written addresses are one place. A wrong merge corrupts every
+  unless a document writes them together. A wrong merge corrupts every
   comparison downstream, so this errs conservative.
-- **No cross-currency comparison.** A rupee figure and a dollar figure are
-  reported incomparable rather than converted, because no rate is in evidence.
-- **Confidence is composed, not calibrated.** It is a defensible product of
-  grounding quality, frame completeness and period certainty, but it has not
-  been fitted against outcomes — there are not enough labelled pairs to do that
-  honestly.
-- **The adjudicator is capped at 40 calls** per run. Past that, unresolved
-  aliases stay `INSUFFICIENT_EVIDENCE`.
+- **No cross-currency comparison.** Reported incomparable rather than converted,
+  because no rate is in evidence.
+- **Confidence is composed, not calibrated.** A defensible product of grounding
+  quality, frame completeness and period certainty — but not fitted against
+  outcomes, because there are not enough labelled pairs to do that honestly.
+- **The adjudicator was never exercised on the full corpus.** 1,237 alias
+  questions went unanswered because the quota was gone; those pairs are
+  suppressed rather than guessed. With budget, `revenue from operations` and
+  `revenue from services` resolve and the pair corroborates — that path is
+  tested (`tests/test_compare.py`).
 
-**Next, in order:** geometry-aware table reconstruction from the word boxes;
-calibrating confidence against a larger labelled set; an OCR fallback; and
-letting a reviewer correct a verdict in the UI so corrections become new
-labelled pairs.
+### Next, in order
+
+1. Resolve first-person entities against the document's subject.
+2. Geometry-aware table reconstruction from the stored word boxes.
+3. Calibrate confidence against a larger labelled set.
+4. Let a reviewer correct a verdict in the UI, so corrections become new
+   labelled pairs.
 
 ---
 

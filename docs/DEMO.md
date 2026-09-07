@@ -3,8 +3,8 @@
 Record at 1080p, `python run.py --demo` already running and warm. Show the
 tool, never the terminal. Do not narrate setup.
 
-Numbers marked `‹›` come from the live run — fill them from
-`python -m tieout.eval --db tieout.db` before recording.
+Numbers below are from the committed corpus (`python -m tieout.eval --db
+data/demo.db`). Re-check them if you re-run extraction.
 
 ---
 
@@ -23,7 +23,7 @@ Survey p.4, each with its GDP sentence visible.
 *Screen:* the ledger, already populated. Point at the corpus line in the header.
 
 > "Six documents, 511 pages — a prospectus, an annual report, an earnings deck,
-> and three institutional reports. ‹N› facts extracted. ‹R› were thrown away,
+> and three institutional reports. 1,728 facts extracted. 239 were thrown away,
 > and I'll come back to why."
 
 *Do not* film the ingest running. It takes minutes and shows nothing.
@@ -35,18 +35,19 @@ sentence highlighted.
 
 > "Every fact carries a quote. Before it's stored, the system goes back to the
 > PDF and looks for that quote. If it isn't there — character for character —
-> the fact is rejected and counted. That's the ‹R› from a moment ago. This
-> highlight is drawn from the word geometry, so it's the actual sentence, not a
-> page reference."
+> the fact is rejected and counted. This highlight is drawn from the word
+> geometry, so it's the actual sentence in the actual document — not a page
+> reference you'd have to go and check yourself."
 
 ### 1:00 – 1:22 · Corroboration across wording and units
 
 *Screen:* filter **Corroborates**. Select the RBI ≡ IMF GDP pair, then the
 Delhivery revenue pair.
 
-> "Two institutions, two notations — '2024-25' and 'FY2024/25' — one fact.
-> And here's a harder one: the annual report says ₹81,415.38 million, the
-> earnings deck says ₹8,142 crore. Same figure. String matching finds nothing;
+> "The RBI writes '6.5 per cent in 2024-25'. The IMF writes '6.5 percent in
+> FY2024/25'. Two institutions, two notations, one fact.
+> And a harder one: the annual report says ₹1,266 million for EBITDA, the
+> earnings deck says ₹127 crore. Same figure. String matching finds nothing —
 > this matched after magnitude normalization, at the precision the rounder
 > source claimed."
 
@@ -55,10 +56,12 @@ Delhivery revenue pair.
 *Screen:* filter **Contradicts**. Show the rule trace with every check green
 except `value`.
 
-> "Same entity, metric, unit, period, and both are projections for 2025-26.
-> Every comparability check passes. The values differ by 0.1 percentage points,
-> beyond the precision either source stated, and nothing in either document
-> explains the gap. That's a genuine disagreement between the RBI and the IMF."
+> "The Economic Survey says GDP grew 6.7 per cent in Q1 FY25. The RBI says 6.5
+> per cent in Q1:2024-25. Two different notations that normalise to the same
+> quarter — same entity, metric, unit, price basis, measure. Every comparability
+> check passes. The values differ by 0.2 percentage points and neither document
+> explains why. That's a genuine disagreement between two Indian institutions,
+> and it only shows up if the quarters parse correctly."
 
 ### 1:45 – 2:15 · The case that matters
 
@@ -82,23 +85,28 @@ on screen for a beat — four checks green, `vintage` red.
 
 *Screen:* the ledger footer, then `/api/rejects` or the rejects list.
 
-> "‹R› facts — ‹P›% of what the model produced — failed grounding and were
-> dropped. Two causes. One page in the IMF report is a scanned image with no
-> text layer, so nothing can be grounded on it. And the earnings deck's tables
-> come out column-major: row labels and their four period columns arrive as
-> separate runs, so a value can't be bound to its period. The gate catches that
-> class automatically, because a stitched-together quote isn't contiguous on the
-> page. Fixing it means geometry-aware table reconstruction — using the word
-> boxes I'm already extracting for the highlights. That's what I'd build next."
+> "239 facts were refused. 72 of them — 3.7% of everything the model produced —
+> were ungrounded: it gave a quote that isn't in the page, and the gate threw
+> them out. Another 163 were perfectly well grounded but said 'our Company',
+> which names nothing on its own.
+>
+> And every remaining contradiction is a table artifact: borrowings 1,316
+> against 1,697, same date, same page — current versus non-current, with the row
+> header lost because reading order flattens a table into a stream. Those are
+> reported at 45% confidence saying exactly that, rather than asserted. The fix
+> is geometry-aware table reconstruction, using the word boxes I'm already
+> extracting for these highlights."
 
 ### 2:38 – 3:00 · An unseen document
 
 *Screen:* drag in a PDF that is not in the starter set. Toast shows facts kept,
 facts rejected, relationships added.
 
-> "No document-specific rules anywhere — metric names are discovered at ingest,
-> not enumerated. New document, and only the blocks its facts land in get
-> recompared; nothing existing is rebuilt. That's the incremental path."
+> "This is a Delhivery investor presentation filed with the exchange in August
+> 2025 — the system has never seen it. 51 facts, 50 new relationships, and it
+> connects: active customers were 33,278 in the Q4 FY24 deck and 35,277 here.
+> 962 metric names, none of them written into the code. Only the blocks its
+> facts land in get recompared; nothing existing is rebuilt."
 
 *Last frame:* the reconciled rule trace.
 
@@ -107,8 +115,9 @@ facts rejected, relationships added.
 ## Preparation checklist
 
 - [ ] `python run.py --demo` warm, ledger loaded
-- [ ] A 4th PDF ready to drag in — a public annual report, **not** from the starter set
-- [ ] Numbers filled in from `python -m tieout.eval --db tieout.db`
+- [ ] `data/unseen/delhivery-investor-presentation-2025-08-01.pdf` ready to drag in
+      (BSE filing, not in the starter set; needs a GEMINI_API_KEY to extract live)
+- [ ] Numbers re-checked with `python -m tieout.eval --db data/demo.db`
 - [ ] Pick the clearest instance of each label first; some pairs are noisier
 - [ ] Browser at 1440×900, zoom 100%, no bookmarks bar
 - [ ] Under 3:00. If tight, cut the second corroboration example, not the failure section.

@@ -71,3 +71,55 @@ def test_relations():
     assert relation(q4, fy) == "contained_by"
     assert relation(parse_period("FY24"), parse_period("FY25")) == "disjoint"
     assert relation(parse_period("FY25"), parse_period("2024-25")) == "same"
+
+
+def test_quarter_with_connecting_words():
+    """'Q2 of FY25' fell through to the plain-FY rule and was read as the whole
+    of FY25, which turned quarter-versus-year pairs into false contradictions
+    on the live corpus. All these forms must give the same quarter."""
+    want = (date(2024, 7, 1), date(2024, 9, 30))
+    for raw in ["Q2 FY25", "Q2FY25", "Q2 of FY25", "Q2 - FY25", "Q2/FY25",
+                "second quarter of FY25", "Q2 of the FY25"]:
+        assert iv(raw) == want, f"{raw!r} did not resolve to Q2 FY25"
+
+
+def test_period_ended_phrasings():
+    """The standard financial phrasing. A period stated this way must not
+    collapse to the instant it ends on."""
+    assert iv("for the year ended March 31, 2024") == (date(2023, 4, 1), date(2024, 3, 31))
+    assert iv("year ended March 31, 2021") == (date(2020, 4, 1), date(2021, 3, 31))
+    assert iv("quarter ended September 30, 2024") == (date(2024, 7, 1), date(2024, 9, 30))
+    assert iv("three months ended June 30, 2025") == (date(2025, 4, 1), date(2025, 6, 30))
+    assert iv("nine months period ended December 31, 2021") == (date(2021, 4, 1), date(2021, 12, 31))
+
+
+def test_a_year_ended_matches_the_fiscal_year_it_is():
+    """'for the year ended March 31, 2024' and 'FY24' are the same interval."""
+    assert iv("for the year ended March 31, 2024") == iv("FY24")
+
+
+def test_a_quarter_is_contained_by_its_year_not_equal_to_it():
+    q = parse_period("Q2 of FY25")
+    y = parse_period("FY25")
+    assert relation(y, q) == "contains"
+    assert relation(q, y) == "contained_by"
+
+
+def test_a_quarter_inherits_the_years_own_convention():
+    """Found live: 'first quarter of FY2025/26' was landing twelve months early.
+    In a span form the first year is the year the FY STARTS, and the quarter has
+    to follow whatever the year form means -- which is why the parser splits the
+    quarter off and re-parses the remainder rather than matching both at once."""
+    assert iv("first quarter of FY2025/26") == (date(2025, 4, 1), date(2025, 6, 30))
+    assert iv("Q1 FY2025/26") == (date(2025, 4, 1), date(2025, 6, 30))
+    # ... and a single-year form still means the year it ends
+    assert iv("Q1 FY25") == (date(2024, 4, 1), date(2024, 6, 30))
+
+
+def test_a_quarter_without_the_letters_fy():
+    """'Q1:2024-25' lost its quarter entirely because the pattern demanded an
+    'FY', and a quarterly figure was then compared against a full year."""
+    assert iv("Q1:2024-25") == (date(2024, 4, 1), date(2024, 6, 30))
+    assert iv("Q1 2024-25") == (date(2024, 4, 1), date(2024, 6, 30))
+    assert iv("fourth quarter of 2024-25") == (date(2025, 1, 1), date(2025, 3, 31))
+    assert parse_period("Q1:2024-25") != parse_period("2024-25")

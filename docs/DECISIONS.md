@@ -297,3 +297,49 @@ matter.
 partway through the corpus. 250 of 487 candidate pages were extracted. That is
 a budget limit, not a system limit — the cache means resuming costs nothing —
 but every number reported from this run is over those 250 pages, not all 487.
+
+---
+
+## D14 — Parse a quarter by splitting it off, not by one pattern
+**2026-09-07**
+
+Three false verdicts on the live corpus all came from trying to spell every
+year form into the quarter regex:
+
+| written | was read as | should be |
+|---|---|---|
+| `Q2 of FY25` | the whole of FY25 | Jul–Sep 2024 |
+| `Q1:2024-25` | the whole of 2024-25 | Apr–Jun 2024 |
+| `first quarter of FY2025/26` | Apr–Jun 2024 | Apr–Jun 2025 |
+
+The first two produced false contradictions — a quarterly figure compared
+against an annual one as though the periods matched. The third landed twelve
+months early, because in a span form the first year is the year the fiscal year
+*starts*, while the quarter path took it as the year it ends.
+
+`parse_period` now pulls the quarter marker off the front and re-parses the
+remainder with the ordinary year rules, so a quarter inherits whatever
+convention its year form carries. One rule instead of four, and adding a new
+year form automatically works for quarters too.
+
+**What it bought:** the false contradictions disappeared, and a real one
+surfaced that needed both notations parsed correctly — Economic Survey p.20
+"6.7 per cent … in Q1 … FY25" against RBI p.24 "6.5 per cent in Q1:2024-25".
+
+**Cost:** two passes over the string instead of one. Irrelevant.
+
+---
+
+## D15 — Report what was read, not what was queued
+**2026-09-07**
+
+`pages_scanned` counted pages that passed the junk filter, which is what the
+system *intended* to read. When the free-tier quota ran out mid-corpus, that
+number still said 487 while only 284 pages had actually been answered for — so
+every rate derived from it was quietly computed over a corpus larger than the
+one that existed.
+
+`/api/stats` now reports `pages_candidate` and `pages_extracted` separately,
+the UI shows "284/511 pages read", and the evaluation harness prints a line
+saying the run was cut short. A metric that flatters itself when a run fails
+is worse than no metric.

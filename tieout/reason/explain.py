@@ -26,6 +26,8 @@ DIMENSION_PHRASE = {
     "adjustment": "one is adjusted and the other is not",
     "unit": "they are stated in different units",
     "metric": "it is unclear whether they measure the same thing",
+    "sign_convention": "the same magnitude is written with opposite signs",
+    "valuation": "they use different valuation conventions",
 }
 
 RECONCILE_HINT = {
@@ -34,6 +36,8 @@ RECONCILE_HINT = {
     "consolidation": "A parent company's own accounts and the group's accounts are both correct, and different.",
     "price_basis": "Values at constant and current prices answer different questions.",
     "measure": "These are different aggregates and are not expected to match.",
+    "sign_convention": "Filings write a loss as a positive number in the narrative and in parentheses in the statements.",
+    "valuation": "Basic and market prices differ by product taxes and subsidies.",
 }
 
 
@@ -133,6 +137,14 @@ def explain(v: Verdict, a: dict, b: dict, ev_a: dict | None = None,
 
     if v.label == CONTRADICTS:
         delta = _delta(v, a)
+        caveat = next((c.detail for c in v.checks if c.dimension == "provenance"), None)
+        if caveat:
+            return (
+                f"{where} states {shared} for {a.get('period_raw')} as {va} in one place and "
+                f"{vb} in another.{delta} Reported with low confidence: {caveat}. A row header "
+                f"the extractor did not capture is the more likely explanation than the "
+                f"document disagreeing with itself."
+            )
         return (
             f"{where} make the same claim about {shared} for {a.get('period_raw')} — same "
             f"unit, same basis — but state different values: {va} against {vb}.{delta} "

@@ -107,6 +107,8 @@ def score_extraction(db: Path) -> dict | None:
         "facts_kept": s["facts_kept"],
         "facts_rejected": s["facts_rejected"],
         "hallucination_rate": s["hallucination_rate"],
+        "rejection_rate": s["rejection_rate"],
+        "ungrounded": s["ungrounded"],
         "rejects_by_reason": s["rejects_by_reason"],
         "evidence_match_types": match_types,
         "gold_pages_with_a_grounded_fact": f"{found}/{len(gold)}",
@@ -114,6 +116,8 @@ def score_extraction(db: Path) -> dict | None:
         "metrics_discovered": s["metrics_discovered"],
         "relationships_by_label": s["relationships_by_label"],
         "decided_by_llm": s["llm_decided"],
+        "pages_candidate": s["pages_candidate"],
+        "pages_extracted": s["pages_extracted"],
         "pages_scanned": s["pages_scanned"],
         "pages_skipped": s["pages_skipped"],
     }
@@ -164,11 +168,18 @@ def main() -> int:
               f"quote match types {e['evidence_match_types']}.\n")
         return 0
     print("\n  EXTRACTION — from the ingest run in", args.db)
-    print(f"  {'pages scanned / skipped':38s} {e['pages_scanned']} / {e['pages_skipped']}")
+    print(f"  {'pages skipped by the junk filter':38s} {e['pages_skipped']}")
+    print(f"  {'pages a model actually answered for':38s} {e['pages_extracted']} "
+          f"of {e['pages_candidate']} candidates")
+    if e["pages_extracted"] < e["pages_candidate"]:
+        print(f"  {'':38s} (the run was cut short — see README)")
     print(f"  {'facts emitted by the model':38s} {e['facts_emitted']}")
     print(f"  {'facts kept (quote located)':38s} {e['facts_kept']}")
-    print(f"  {'facts rejected by the gate':38s} {e['facts_rejected']}")
-    print(f"  {'hallucination rate':38s} {e['hallucination_rate'] * 100:5.1f}%")
+    print(f"  {'facts refused by the gate':38s} {e['facts_rejected']} "
+          f"({e['rejection_rate'] * 100:.1f}%)")
+    print(f"  {'  of which ungrounded (no quote)':38s} {e['ungrounded']}")
+    print(f"  {'hallucination rate':38s} {e['hallucination_rate'] * 100:5.1f}%"
+          f"   <- ungrounded / emitted")
     print(f"  {'gold pages with a grounded fact':38s} {e['gold_pages_with_a_grounded_fact']}")
     print(f"  {'distinct metrics discovered':38s} {e['metrics_discovered']}")
     print(f"  {'relationships decided by a model':38s} {e['decided_by_llm']}")

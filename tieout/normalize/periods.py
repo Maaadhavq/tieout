@@ -64,6 +64,54 @@ def _expand2(yy: int, anchor: int = 2000) -> int:
     return yy if yy > 99 else anchor + yy
 
 
+_ORDINAL = {"first": "1", "second": "2", "third": "3", "fourth": "4"}
+
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+    "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+    "10": 10, "11": 11, "12": 12,
+}
+
+
+_QUARTER_MARKER = re.compile(
+    # `(?!\d)` rather than `\b` after the digit: "Q2FY25" has no boundary there,
+    # and requiring one silently dropped the quarter.
+    r"\b(?:q\s?([1-4])(?!\d)|(first|second|third|fourth)\s+quarter\b)"
+    r"[\s:\-/]*(?:of\s+|for\s+|in\s+)?(?:the\s+)?")
+
+
+def _split_quarter(s: str) -> tuple[int | None, str]:
+    """Pull a quarter marker off a period string and return the remainder.
+
+    "Q1:2024-25" -> (1, "2024-25");  "first quarter of FY2025/26" -> (1, "FY2025/26")
+
+    Splitting instead of matching the whole thing is what lets the year rules
+    below decide what the year means, so a quarter inherits the same
+    start-year/end-year handling as the annual forms.
+    """
+    m = _QUARTER_MARKER.search(s)
+    if not m:
+        return None, s
+    q = int(m.group(1)) if m.group(1) else int(_ORDINAL[m.group(2)])
+    return q, (s[:m.start()] + " " + s[m.end():]).strip()
+
+
+def _count_word(w: str) -> int | None:
+    return _NUMBER_WORDS.get(w.lower())
+
+
+def _minus_months(d: date, n: int) -> date:
+    """First day of the `n`-month period that ENDS in the month of `d`.
+
+    A year ended 31 March 2024 starts on 1 April 2023, so the span covers n
+    months inclusive of both ends -- subtract n-1, not n.
+    """
+    total = (d.year * 12 + d.month - 1) - (n - 1)
+    year, month = divmod(total, 12)
+    return date(year, month + 1, 1)
+
+
 def _last_day(year: int, month: int) -> int:
     leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
     return [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
@@ -94,12 +142,40 @@ def parse_period(raw: str | None) -> Period | None:
     s = re.sub(r"\s+", " ", str(raw)).strip().lower()
     s = s.replace("–", "-").replace("—", "-").replace("−", "-")
 
-    # Q4 FY24 / Q4FY2024 / fourth quarter of FY24
-    m = re.search(r"\bq([1-4])\s*[-/ ]?\s*fy\s*(\d{2,4})\b", s)
+    # "<n> months/quarter/year ended <date>" -- the standard financial phrasing.
+    # These MUST run before the bare-date rules below, or "nine months period
+    # ended December 31, 2021" collapses to an instant and a nine-month figure
+    # gets compared against a full year.
+    m = re.search(r"\b(?:for\s+the\s+)?(\w+)[\s-]+months?\s+(?:period\s+)?ended?\b(.*)", s)
+    if m and (n := _count_word(m.group(1))):
+        end = parse_period(m.group(2))
+        if end:
+            return Period(_minus_months(end.end, n), end.end,
+                          "quarterly" if n == 3 else "annual" if n == 12 else "period")
+    m = re.search(r"\b(?:for\s+the\s+)?(?:year|twelve\s+months)\s+ended?\b(.*)", s)
     if m:
-        q, y = int(m.group(1)), _expand2(int(m.group(2)))
-        a, b = _fy_quarter(y, q)
-        return Period(a, b, "quarterly")
+        end = parse_period(m.group(1))
+        if end:
+            return Period(_minus_months(end.end, 12), end.end, "annual")
+    m = re.search(r"\bquarter\s+ended?\b(.*)", s)
+    if m:
+        end = parse_period(m.group(1))
+        if end:
+            return Period(_minus_months(end.end, 3), end.end, "quarterly")
+
+    # Quarters. Deliberately NOT one regex: find the quarter marker, remove it,
+    # and let the year rules below parse whatever is left. Trying to spell the
+    # year form into the quarter pattern is what produced two live bugs --
+    # "Q1:2024-25" lost its quarter entirely for want of an "FY", and
+    # "first quarter of FY2025/26" took 2025 as the year the FY *ends* when in a
+    # span form it is the year it starts, landing the quarter twelve months out.
+    qnum, rest = _split_quarter(s)
+    if qnum:
+        year_period = parse_period(rest) if rest.strip() else None
+        if year_period and year_period.grain == "annual":
+            # `_fy_quarter` counts from the year the fiscal year ENDS.
+            a, b = _fy_quarter(year_period.end.year, qnum)
+            return Period(a, b, "quarterly")
 
     # FY2024-25 / FY2023-24 / FY 2024/25 / FY2024/2025
     m = re.search(r"\bfy\s*(\d{4})\s*[-/]\s*(\d{2,4})\b", s)

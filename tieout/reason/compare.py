@@ -35,6 +35,14 @@ CONTRADICTS = "CONTRADICTS"
 RECONCILED = "CONTEXTUALLY_RECONCILED"
 INSUFFICIENT = "INSUFFICIENT_EVIDENCE"
 UNRELATED = "UNRELATED"
+# Not one of the four reported relationships. A document presenting the same
+# metric for FY19, FY20 and FY21 differs on period at every pair, and calling
+# each of those a "contextual reconciliation" is true but useless -- on the
+# starter corpus it was 215 of 253, drowning the findings that matter.
+# A reconciliation is only a finding when a reader could have mistaken the pair
+# for a contradiction, and a document's own time series is not that: the
+# periods are right there in the table. Counted, not reported.
+TIME_SERIES = "TIME_SERIES"
 
 
 @dataclass
@@ -169,6 +177,13 @@ def compare(a: dict, b: dict, aliases: dict | None = None) -> Verdict:
 
     if len(frame_diffs) == 1:
         dim = frame_diffs[0]
+        # A document's own time series: same source, period the only difference,
+        # and the two periods do not overlap. Nothing here could be mistaken for
+        # a disagreement. A quarter sitting inside its own year still can be, so
+        # containment stays a reconciliation.
+        if (dim == "period" and rel == "disjoint"
+                and a.get("doc_id") and a["doc_id"] == b.get("doc_id")):
+            return Verdict(TIME_SERIES, "period", 1.0, checks)
         conf = 0.9 if not frame_unknown else 0.7
         conf *= min(a.get("confidence", 1.0) or 1.0, b.get("confidence", 1.0) or 1.0) ** 0.25
         v = Verdict(RECONCILED, dim, round(conf, 2), checks)
@@ -187,6 +202,15 @@ def compare(a: dict, b: dict, aliases: dict | None = None) -> Verdict:
 
     ok, delta = agree(qa, qb)
     tol = max(qa.tolerance, qb.tolerance)
+
+    # Same magnitude, opposite sign. Filings write a loss as 2,491.86 in the
+    # narrative and (2,491.86) in the statements; that is one figure under two
+    # sign conventions, not two claims.
+    if not ok and abs(qa.value + qb.value) <= tol and qa.value * qb.value < 0:
+        checks.append(Check("sign_convention", "differs",
+                            f"{qa.raw} vs {qb.raw} — equal magnitude, opposite sign"))
+        return Verdict(RECONCILED, "sign_convention", 0.8, checks, value_delta=round(delta, 6))
+
     checks.append(Check(
         "value", "same" if ok else "differs",
         f"{qa.raw} vs {qb.raw} · Δ {delta:.6g} · tolerance ±{tol:.6g} "
@@ -205,6 +229,25 @@ def compare(a: dict, b: dict, aliases: dict | None = None) -> Verdict:
         return v
 
     conf = 0.93 * (min(a.get("confidence", 1.0) or 1.0, b.get("confidence", 1.0) or 1.0) ** 0.25)
+
+    # A document contradicting ITSELF on ONE PAGE is possible but rare. Far more
+    # often both values sit in the same table under different row headers --
+    # current vs non-current borrowings, employees vs workers -- and the
+    # qualifier that separates them was lost, because reading order flattens a
+    # table into a stream. Measured on the starter corpus, most same-page
+    # contradictions were this. The finding is still reported, at much lower
+    # confidence and saying why, rather than asserted or hidden.
+    same_page = (a.get("doc_id") and a["doc_id"] == b.get("doc_id")
+                 and a.get("page_no") is not None and a.get("page_no") == b.get("page_no"))
+    if not ok and same_page:
+        checks.append(Check(
+            "provenance", "unknown",
+            "both values are on the same page under the same label; a table row "
+            "qualifier that was not captured most likely separates them"))
+        v = Verdict(CONTRADICTS, "provenance", round(conf * 0.45, 2), checks)
+        v.value_delta = round(delta, 6)
+        return v
+
     v = Verdict(CORROBORATES if ok else CONTRADICTS, None, round(conf, 2), checks)
     v.value_delta = round(delta, 6)
     return v

@@ -149,12 +149,26 @@ def main() -> int:
             print(f"  {rep.pairs_considered} pairs considered "
                   f"(naive would be {rep.pairs_if_naive}), {rep.written} relationships written, "
                   f"{rep.adjudications} adjudication calls")
+            print(f"  suppressed: {rep.time_series} same-document time series, "
+                  f"{rep.unresolved} unresolved metric-alias questions")
             for label, n in sorted(rep.by_label.items(), key=lambda kv: -kv[1]):
                 print(f"      {label:26s} {n}")
 
     s = store.stats()
-    print(f"\n  {s['facts_kept']} facts · {s['facts_rejected']} rejected by the grounding gate "
-          f"· hallucination rate {s['hallucination_rate'] * 100:.1f}%")
+    if s["is_reference_set"]:
+        # A hallucination rate over hand-labelled facts is trivially zero and
+        # says nothing about the extractor. Say what this corpus is instead.
+        print(f"\n  {s['facts_kept']} hand-labelled reference facts, all grounded — "
+              f"not extraction output, so no hallucination rate is reported")
+    else:
+        print(f"\n  {s['facts_kept']} facts kept · {s['facts_rejected']} refused "
+              f"({s['rejection_rate'] * 100:.1f}%), of which {s['ungrounded']} could not "
+              f"be quoted from the page")
+        print(f"  hallucination rate {s['hallucination_rate'] * 100:.1f}% "
+              f"(ungrounded claims / claims the model emitted)")
+        if s["pages_extracted"] < s["pages_candidate"]:
+            print(f"  read {s['pages_extracted']} of {s['pages_candidate']} candidate pages "
+                  f"— this run did not finish the corpus")
 
     if args.no_serve:
         return 0

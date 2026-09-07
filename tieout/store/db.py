@@ -31,6 +31,11 @@ class Store:
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
+        # sqlite3 raises a bare "unable to open database file" when the parent
+        # directory is missing, which sends people looking for a permissions
+        # problem. Create it.
+        if self.path.parent and not self.path.parent.exists():
+            self.path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self.conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
@@ -108,12 +113,29 @@ class Store:
             "is_reference_set": bool(kept and hand == kept),
             "documents": self.one("SELECT COUNT(*) c FROM documents")["c"],
             "pages_total": pages["p"],
+            # Candidate pages (passed the junk filter) vs pages a model
+            # actually answered for. These differ when a run is cut short --
+            # by a quota, a network failure, or an interrupt -- and reporting
+            # only the first would overstate how much of the corpus was read.
+            "pages_candidate": pages["s"],
+            "pages_extracted": self.one(
+                "SELECT COUNT(*) c FROM extract_cache")["c"],
             "pages_scanned": pages["s"],
             "pages_skipped": pages["k"],
             "facts_kept": kept,
             "facts_rejected": rejected,
             "facts_emitted": emitted,
-            "hallucination_rate": round(rejected / emitted, 4) if emitted else 0.0,
+            # Two different failures, deliberately not averaged together.
+            # `hallucination_rate` counts ONLY claims whose quote could not be
+            # found in the source -- the model asserting something the page does
+            # not say. `rejection_rate` is every reason a fact was refused,
+            # including well-grounded ones we could not place (an entity of
+            # "our Company", a value that would not parse). Lumping them
+            # together inflates the first, which is the number people read.
+            "hallucination_rate": (
+                round(by_reason.get("quote_not_found", 0) / emitted, 4) if emitted else 0.0),
+            "rejection_rate": round(rejected / emitted, 4) if emitted else 0.0,
+            "ungrounded": by_reason.get("quote_not_found", 0),
             "rejects_by_reason": by_reason,
             "relationships": sum(by_label.values()),
             "relationships_by_label": by_label,

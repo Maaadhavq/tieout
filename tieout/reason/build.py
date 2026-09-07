@@ -13,10 +13,10 @@ from dataclasses import dataclass, field
 from ..store.db import new_id, now
 from . import blocking
 from .adjudicate import Adjudicator
-from .compare import UNRELATED, compare
+from .compare import TIME_SERIES, UNRELATED, compare
 from .explain import explain
 
-SUPPRESSED = {UNRELATED}
+SUPPRESSED = {UNRELATED, TIME_SERIES}
 
 
 @dataclass
@@ -26,13 +26,19 @@ class BuildReport:
     pairs_if_naive: int = 0
     written: int = 0
     suppressed: int = 0
+    time_series: int = 0
     adjudications: int = 0
     unresolved: int = 0
     by_label: dict = field(default_factory=dict)
 
 
 def _facts(store, where: str = "", args=()) -> list[dict]:
-    return store.q(f"SELECT * FROM facts {where}", args)
+    # page_no rides along: the comparator uses it to tell a document
+    # contradicting itself from a table row it failed to qualify.
+    return store.q(
+        "SELECT f.*, e.page_no FROM facts f "
+        "JOIN evidence e ON e.evidence_id = f.evidence_id "
+        + where.replace("doc_id", "f.doc_id"), args)
 
 
 def _evidence_index(store) -> dict[str, dict]:
@@ -79,6 +85,8 @@ def build(store, incremental_doc_id: str | None = None, offline: bool = False,
 
         if v.label in SUPPRESSED:
             report.suppressed += 1
+            if v.label == TIME_SERIES:
+                report.time_series += 1
             continue
 
         decided_by = "llm" if (v.needs_adjudication and v.label not in SUPPRESSED) else "rule"

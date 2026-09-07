@@ -16,7 +16,13 @@ const HUMAN_DIM = {
   period: "reporting period", unit: "unit", metric: "metric", value: "value",
 };
 
-const state = { facts: [], rels: [], label: null, selected: null, stats: null, q: "" };
+// The ledger is a scrolling list, not a virtualised grid. A real corpus runs to
+// thousands of facts, so render a window of them and say so rather than
+// building ten thousand rows and stalling the tab.
+const PAGE = 300;
+
+const state = { facts: [], rels: [], label: null, selected: null, stats: null,
+                q: "", shown: PAGE };
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, txt) => {
@@ -55,12 +61,25 @@ async function load() {
   else renderReasoning();
 }
 
-/** Open on the most instructive relationship rather than the first row. */
+/** Open on the most instructive relationship rather than the first row.
+    Within reconciliations, prefer a dimension a reader could NOT have spotted
+    themselves: a vintage or consolidation difference is a finding, whereas two
+    different quarters is mostly just a time series. */
+const INTERESTING = ["vintage", "consolidation", "measure", "sign_convention",
+                     "price_basis", "valuation"];
+
 function pickHighlight(rels) {
-  const order = ["CONTEXTUALLY_RECONCILED", "CONTRADICTS", "CORROBORATES", "INSUFFICIENT_EVIDENCE"];
-  for (const label of order) {
-    const hit = rels.filter((r) => r.label === label)
-      .sort((a, b) => b.confidence - a.confidence)[0];
+  const crossDoc = (r) => r.a_doc !== r.b_doc;
+  const best = (list) => list.sort((a, b) => b.confidence - a.confidence)[0];
+
+  const gem = best(rels.filter((r) => r.label === "CONTEXTUALLY_RECONCILED"
+                                   && INTERESTING.includes(r.dimension)));
+  if (gem) return gem;
+
+  for (const label of ["CONTRADICTS", "CORROBORATES", "CONTEXTUALLY_RECONCILED",
+                       "INSUFFICIENT_EVIDENCE"]) {
+    const hit = best(rels.filter((r) => r.label === label && crossDoc(r)))
+             || best(rels.filter((r) => r.label === label));
     if (hit) return hit;
   }
   return rels[0];
@@ -72,7 +91,7 @@ function renderCorpus() {
   $("#corpus").innerHTML = "";
   const bits = [
     `${s.documents} document${s.documents === 1 ? "" : "s"}`,
-    `${s.pages_total} pages`,
+    `${s.pages_extracted}/${s.pages_total} pages read`,
     `${s.facts_kept} facts`,
     `${s.relationships} relationships`,
   ];
@@ -91,7 +110,11 @@ function renderFilters() {
     b.setAttribute("aria-pressed", state.label === key);
     b.append(el("span", "dot"), el("span", null, name),
              el("span", "n", String(counts[key] || 0)));
-    b.onclick = () => { state.label = state.label === key ? null : key; renderFilters(); renderRows(); };
+    b.onclick = () => {
+      state.label = state.label === key ? null : key;
+      state.shown = PAGE;
+      renderFilters(); renderRows();
+    };
     box.appendChild(b);
   });
 }
@@ -125,12 +148,16 @@ function badge(f) {
 function renderRows() {
   const box = $("#rows");
   box.innerHTML = "";
-  const facts = visibleFacts();
-  $("#ledger-note").textContent = state.label
-    ? `${facts.length} facts in ${LABELS.find((l) => l[0] === state.label)[1].toLowerCase()} relationships`
-    : `${facts.length} facts`;
+  const all = visibleFacts();
+  const facts = all.slice(0, state.shown);
+  const scope = state.label
+    ? `in ${LABELS.find((l) => l[0] === state.label)[1].toLowerCase()} relationships`
+    : "";
+  $("#ledger-note").textContent = facts.length < all.length
+    ? `showing ${facts.length} of ${all.length} facts ${scope}`.trim()
+    : `${all.length} facts ${scope}`.trim();
 
-  if (!facts.length) {
+  if (!all.length) {
     box.appendChild(el("div", "empty", "No facts match this filter."));
   }
 
@@ -156,6 +183,12 @@ function renderRows() {
     box.appendChild(row);
   });
 
+  if (facts.length < all.length) {
+    const more = el("button", "more", `show ${Math.min(PAGE, all.length - facts.length)} more`);
+    more.onclick = () => { state.shown += PAGE; renderRows(); };
+    box.appendChild(more);
+  }
+
   const s = state.stats;
   // A hallucination rate over hand-labelled facts would be trivially zero, so
   // the reference corpus says what it is instead of quoting a flattering number.
@@ -164,7 +197,8 @@ function renderRows() {
       `<span class="spacer" style="flex:1"></span>` +
       `<span>hand-labelled reference set — not extraction output</span>`
     : `<span>${s.facts_kept} facts kept</span>` +
-      `<span class="bad">${s.facts_rejected} rejected — quote not found in source</span>` +
+      `<span class="bad">${s.facts_refused ?? s.facts_rejected} refused, ` +
+      `${s.ungrounded} of them ungrounded</span>` +
       `<span class="spacer" style="flex:1"></span>` +
       `<span>hallucination rate ${(s.hallucination_rate * 100).toFixed(1)}%</span>`;
 }
@@ -385,8 +419,9 @@ $("#upload-input").onchange = async (e) => {
     const r = await api("/api/documents", { method: "POST", body: fd });
     toast(r.already_ingested
       ? `${r.filename} was already in the layer — nothing recomputed.`
-      : `${r.filename}: ${r.facts_kept} facts kept, ${r.facts_rejected} rejected by the ` +
-        `grounding gate, ${r.relationships_added} new relationships.`, 7000);
+      : `${r.filename}: ${r.facts_kept} facts kept, ${r.facts_rejected} refused ` +
+        `(${((r.hallucination_rate ?? 0) * 100).toFixed(0)}% ungrounded), ` +
+        `${r.relationships_added} new relationships — nothing existing recomputed.`, 8000);
     await load();
   } catch (err) {
     toast(`Upload failed: ${err.message}`, 7000);
@@ -397,7 +432,11 @@ $("#upload-input").onchange = async (e) => {
   }
 };
 
-$("#search").oninput = (e) => { state.q = e.target.value.trim(); renderRows(); };
+$("#search").oninput = (e) => {
+  state.q = e.target.value.trim();
+  state.shown = PAGE;
+  renderRows();
+};
 
 load().catch((e) => {
   $("#rows").innerHTML = `<div class="empty"><strong>Could not load</strong>${esc(e.message)}</div>`;

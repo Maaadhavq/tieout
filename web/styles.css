@@ -232,6 +232,13 @@ footer.ledger-foot .bad { color: var(--contradicts); }
   font-size: 10px; color: var(--accent); text-decoration: underline;
 }
 
+.more {
+  display: block; width: calc(100% - 28px); margin: 8px 14px 14px; padding: 7px;
+  border: 1px dashed var(--rule); border-radius: 5px; background: transparent;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.more:hover { border-color: var(--accent); color: var(--accent); }
+
 .empty { padding: 40px 20px; color: var(--faint); font-size: 12.5px; text-align: center; }
 .empty strong { display: block; color: var(--muted); margin-bottom: 5px; font-size: 13px; }
 

@@ -23,6 +23,22 @@ from .pdf import read_pages, sha256_file
 
 FRAME_DIMS = ("entity", "metric", "period", "unit", "basis")
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _portable_path(path: Path) -> str:
+    """Store a repo-relative path when the PDF lives inside the repo.
+
+    data/demo.db is committed so the evaluator can replay a run without a key.
+    An absolute path from the machine that built it would make every page image
+    404 on their clone.
+    """
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(resolved)
+
 
 @dataclass
 class IngestReport:
@@ -39,8 +55,17 @@ class IngestReport:
     already_ingested: bool = False
 
     @property
-    def hallucination_rate(self) -> float:
+    def rejection_rate(self) -> float:
+        """Every reason a fact was refused."""
         return round(self.rejected / self.emitted, 4) if self.emitted else 0.0
+
+    @property
+    def hallucination_rate(self) -> float:
+        """Only claims whose quote was not in the page. Kept distinct from
+        `rejection_rate`: an entity we could not resolve is a real failure, but
+        it is not the model asserting something the document does not say."""
+        ungrounded = self.reject_reasons.get("quote_not_found", 0)
+        return round(ungrounded / self.emitted, 4) if self.emitted else 0.0
 
 
 def _frame_completeness(f: dict) -> float:
@@ -79,7 +104,7 @@ def ingest_document(store, path: str | Path, extractor: Extractor,
     report.pages_scanned, report.pages_skipped = len(scan), len(skipped)
 
     store.insert("documents", {
-        "doc_id": doc_id, "filename": path.name, "path": str(path.resolve()),
+        "doc_id": doc_id, "filename": path.name, "path": _portable_path(path),
         "sha256": sha,
         "page_count": len(pages), "publisher": None, "doc_type": None,
         "as_of_date": None, "ingested_at": now(),
