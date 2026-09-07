@@ -23,8 +23,8 @@ Survey p.4, each with its GDP sentence visible.
 *Screen:* the ledger, already populated. Point at the corpus line in the header.
 
 > "Six documents, 511 pages — a prospectus, an annual report, an earnings deck,
-> and three institutional reports. 1,728 facts extracted. 239 were thrown away,
-> and I'll come back to why."
+> and three institutional reports. 1,726 facts. 241 were thrown away, and I'll
+> come back to why."
 
 *Do not* film the ingest running. It takes minutes and shows nothing.
 
@@ -83,18 +83,22 @@ on screen for a beat — four checks green, `vintage` red.
 
 ### 2:15 – 2:38 · What it gets wrong
 
-*Screen:* the ledger footer, then `/api/rejects` or the rejects list.
+*Screen:* click **Refused** in the header. The ledger fills with the 241 claims
+the gate would not accept. Click the first one.
 
-> "239 facts were refused. 72 of them — 3.7% of everything the model produced —
-> were ungrounded: it gave a quote that isn't in the page, and the gate threw
-> them out. Another 163 were perfectly well grounded but said 'our Company',
-> which names nothing on its own.
+> "241 claims were refused, and here they all are. 72 of them — 3.7% of
+> everything the model produced — were ungrounded: it gave a quote that isn't in
+> the page. This one claimed a figure quoting 'Centre -4.5' — a table row label
+> welded to a number from another column. It reads as a phrase; it's never
+> contiguous in the document. Open the page and look for it: it isn't there.
+> Another 163 were perfectly well grounded but said 'our Company', which names
+> nothing on its own.
 >
-> And every remaining contradiction is a table artifact: borrowings 1,316
-> against 1,697, same date, same page — current versus non-current, with the row
-> header lost because reading order flattens a table into a stream. Those are
-> reported at 45% confidence saying exactly that, rather than asserted. The fix
-> is geometry-aware table reconstruction, using the word boxes I'm already
+> And 17 of the 22 contradictions are table artifacts: borrowings 1,316 against
+> 1,697, same date, same page — current versus non-current, with the row header
+> lost because reading order flattens a table into a stream. Those are reported
+> at 41 to 42% confidence saying exactly that, rather than asserted. The fix is
+> geometry-aware table reconstruction, using the word boxes I'm already
 > extracting for these highlights."
 
 ### 2:38 – 3:00 · An unseen document
@@ -105,7 +109,7 @@ facts rejected, relationships added.
 > "This is a Delhivery investor presentation filed with the exchange in August
 > 2025 — the system has never seen it. 51 facts, 50 new relationships, and it
 > connects: active customers were 33,278 in the Q4 FY24 deck and 35,277 here.
-> 962 metric names, none of them written into the code. Only the blocks its
+> 961 metric names, none of them written into the code. Only the blocks its
 > facts land in get recompared; nothing existing is rebuilt."
 
 *Last frame:* the reconciled rule trace.
@@ -119,6 +123,8 @@ facts rejected, relationships added.
       (BSE filing, not in the starter set; needs a GEMINI_API_KEY to extract live)
 - [ ] Numbers re-checked with `python -m tieout.eval --db data/demo.db`
 - [ ] `python -m tieout.verify` exits 0 (all four cases present in the corpus)
+- [ ] Deep links work: `#corroborates`, `#contradicts`, `#reconciled`, `#refused`
+      — use them to jump between beats instead of clicking, it is faster on camera
 - [ ] Pick the clearest instance of each label first; some pairs are noisier
 - [ ] Browser at 1440×900, zoom 100%, no bookmarks bar
 - [ ] Under 3:00. If tight, cut the second corroboration example, not the failure section.

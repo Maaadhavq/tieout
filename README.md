@@ -29,7 +29,7 @@ and it prints its reasoning.
 ## Setup and Run Instructions
 
 ```bash
-git clone <this repo> && cd tieout
+git clone https://github.com/Maaadhavq/tieout && cd tieout
 python -m pip install -r requirements.txt
 ```
 
@@ -96,7 +96,7 @@ follows whatever filter is active.
 **Tests and evaluation:**
 
 ```bash
-python -m pytest -q                  # 114 tests, no API key needed
+python -m pytest -q                  # 133 tests, no API key needed
 python -m tieout.eval --db data/demo.db
 ```
 
@@ -249,7 +249,7 @@ over time, reconciled by the same machinery.
 
 ### 4. Extraction failures, measured
 
-Three classes, all visible in the tooling rather than described:
+Four classes, all visible in the tooling rather than described:
 
 - **Ungrounded claims — 72 of 1,967 (3.7%).** The model produced a quote that
   is not in the page. Click **Refused** in the header to see every one of them
@@ -265,12 +265,29 @@ Three classes, all visible in the tooling rather than described:
   them would compare every filing's "company" facts against every other's, so
   they are refused. Resolving them to the document's subject is the first thing
   I would build next.
-- **Tables lose their row headers.** All 22 remaining contradictions are
-  same-page pairs like "Borrowings 1,316.09 vs 1,697.34, same date, same page"
-  — current versus non-current, with the qualifier lost because reading order
-  flattens a table into a stream. They are reported at 45% confidence *saying
-  that*, rather than asserted. The fix is geometry-aware table reconstruction
-  from the word boxes already extracted for the highlights.
+- **Tables lose their row headers — 17 of the 22 contradictions.** They are
+  same-page pairs from the Delhivery filings like "Borrowings 1,316.09 vs
+  1,697.34, same date, same page" — current versus non-current, with the
+  qualifier lost because reading order flattens a table into a stream. Because
+  both sides come off one page, the comparator hedges them to 41–42% confidence
+  *saying that*, rather than asserting them. The fix is geometry-aware table
+  reconstruction from the word boxes already extracted for the highlights.
+- **A value bound to the wrong metric — 4, and the gate cannot see them.** All
+  four are IMF Article IV prose where one sentence carries two percentages.
+  P.3 reads *"Under the baseline assumption of prolonged 50 percent U.S.
+  tariffs, real GDP is projected to grow at 6.6 percent in FY2025/26"*; the
+  model took the **50** as the growth rate. That quote is on the page character
+  for character, so the gate passed it — it checks that the quote is really
+  there, not which number inside it the metric refers to. Three of the four land
+  on one page and are hedged to 41–42% like the tables. The fourth compares p.3
+  against p.13, gets none of that hedging, and is asserted as a **93%-confidence
+  contradiction that is simply wrong** — the only confidently wrong relationship
+  in the corpus. The correct reading of that same sentence was also extracted,
+  and corroborates p.13 at 93%. This is the honest limit of what a
+  quote-presence gate can catch.
+
+That accounts for 21. The 22nd is the real one: the cross-document disagreement
+in case 2 above.
 
 A page with no text layer (IMF Article IV p.1, a scanned cover) yields nothing
 at all and is counted among the 24 pages the junk filter skipped.
@@ -291,15 +308,33 @@ them. They are GDP and GVA, and the comparator suppresses the pair
 | documents / pages | 6 · 511 pages, 24 skipped by the junk filter |
 | pages a model answered for | **284 of 487 candidates** — the run was cut short, see below |
 | facts the model emitted | 1,967 |
-| facts kept | 1,728 |
-| facts refused by the gate | 239 (12.2%) — 163 unresolvable entity, 72 ungrounded, 4 unparseable |
+| facts kept | 1,726 |
+| facts refused by the gate | 241 (12.2%) — 165 unresolvable entity, 72 ungrounded, 4 unparseable |
 | **hallucination rate** | **3.7%** — ungrounded claims / claims emitted |
-| quote match quality | 1,714 exact, 12 fuzzy, 2 normalized (99.2% exact) |
-| distinct metrics discovered | 962, none of them hard-coded |
-| pairs compared | 2,325, against 1,492,128 if compared naively (0.16%) |
-| relationships | 31 corroborates · 22 contradicts · 178 reconciled · 374 insufficient |
+| quote match quality | 1,712 exact, 12 fuzzy, 2 normalized (99.2% exact) |
+| distinct metrics discovered | 961, none of them hard-coded |
+| pairs compared | 2,325, against 1,488,675 if compared naively (0.16%) |
+| relationships | 30 corroborates · 22 contradicts · 174 reconciled · 379 insufficient |
 | suppressed | 387 same-document time series, 1,237 unresolved alias questions |
 | relationship accuracy | 7/7 labelled pairs, 2/2 negative controls |
+
+### What it costs to run
+
+| | |
+|---|---|
+| `python run.py --demo` from cold | 0.7 s |
+| `python -m tieout.verify` | 0.1 s |
+| `GET /api/stats` | 4 ms |
+| `GET /api/facts` (1,726 facts, 1.9 MB) | 151 ms |
+| `GET /api/relationships` (605, 1.0 MB) | 63 ms |
+| `GET /api/export.csv` (532 KB) | 313 ms |
+| ingest, live, per page | ~2 s, 6 pages in parallel |
+| re-ingesting a document already seen | free — content-hash dedup, no model call |
+
+Comparison is the part that could have been expensive and is not: 2,325 pairs
+were considered against 1,488,675 if every fact were compared with every other,
+because blocking only ever pairs facts sharing an entity and a metric. The model
+is never asked to compare anything.
 
 **The run is incomplete and the numbers say so.** The free-tier daily quota ran
 out partway through, so 284 of 487 candidate pages were actually read. The
@@ -312,20 +347,31 @@ reported separately in `/api/stats` for exactly this reason.
 - **First-person entities are dropped, not resolved.** 163 well-grounded facts
   lost because the document said "our Company". This is the largest single
   source of lost recall and the first thing to fix.
-- **Tables lose their row headers**, which is where every remaining
-  contradiction comes from. Geometry-aware reconstruction using the word boxes
-  already extracted for the highlights is the fix.
+- **Tables lose their row headers**, which is where 17 of the 22 contradictions
+  come from. Geometry-aware reconstruction using the word boxes already
+  extracted for the highlights is the fix.
+- **The grounding gate checks the quote, not the binding.** A sentence carrying
+  two numbers can have the wrong one attached to the metric and still verify
+  exactly. Four contradictions come from this, and one of them is asserted at
+  93% confidence and is wrong (IMF p.3, above). Requiring the value to appear in
+  a fixed window around the metric mention inside the quote would catch this
+  class, and is the change I would make next after first-person entities.
 - **No OCR.** A scanned page yields nothing.
-- **Relative periods are dropped.** 97 facts said "a year ago" or "the previous
-  year" with no absolute anchor. They get no period, so any comparison
-  involving them returns `INSUFFICIENT_EVIDENCE` — honest, but it is most of
-  that bucket.
+- **Relative periods are dropped.** 108 facts carried a period phrase that never
+  resolved to an absolute interval — "a year ago" (13), "previous year" (11),
+  "one year preceding the date of this prospectus" (9), bare months and
+  quarters, and a few that were not periods at all. With no anchor they get no
+  period, and any comparison involving them returns `INSUFFICIENT_EVIDENCE`.
+  That is honest, and it is most of that bucket: 338 of the 379 insufficient
+  pairs fail on `period`, and 352 of them have no period on at least one side.
 - **Entity resolution is deliberately shallow** — exact match, or one name
   contained in the other. It will not merge "Reserve Bank of India" with "RBI"
   unless a document writes them together. A wrong merge corrupts every
   comparison downstream, so this errs conservative.
-- **No cross-currency comparison.** Reported incomparable rather than converted,
-  because no rate is in evidence.
+- **No unit conversion of any kind.** Rupees against dollars, TWh against GWh,
+  tonnes against kilograms — all reported incomparable rather than converted,
+  because no conversion factor is ever in evidence. Spelling variants of one
+  unit (`mm` / `millimetres`) are folded; different units never are.
 - **Confidence is composed, not calibrated.** A defensible product of grounding
   quality, frame completeness and period certainty — but not fitted against
   outcomes, because there are not enough labelled pairs to do that honestly.

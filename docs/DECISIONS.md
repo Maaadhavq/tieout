@@ -413,3 +413,45 @@ header.
 Fifteen lines, and it means a specific case can be handed over as a link rather
 than a set of instructions — useful in the README, and a safety net if a live
 demo beat misbehaves on camera.
+
+---
+
+## D20 — A unit that is neither money nor a percentage keeps its own name
+**2026-09-07**
+
+Found by testing the normalizers on domains the starter set does not contain.
+Everything that was not a currency or a percentage collapsed to `count`, so
+`6.0 TWh` and `6000 GWh` compared as the same unit — and reported a
+**contradiction**. The same held for millimetres against inches, tonnes against
+kilograms, and any other pair a non-financial document would contain.
+
+The unit is now the word the document wrote, reduced to one token. Spelling
+variants of a single unit are folded (`mm` / `millimetre`, `tonne` / `ton`,
+plus a conservative de-pluralisation), but nothing is ever converted — for
+exactly the reason currencies never were: no factor is in evidence.
+
+Measured on the corpus: the four reported labels did not move (30 / 22 / 174),
+and `INSUFFICIENT_EVIDENCE` rose 350 → 379. Those 29 extra are pairs that were
+being compared on a unit match that did not exist, including `INR vs share` and
+`count vs equity`.
+
+**Cost:** two documents using different spellings this map does not know will be
+reported incomparable instead of compared. That is the safe direction, and the
+map is three lines to extend.
+
+---
+
+## D21 — A possessive in front makes a phrase deictic whatever follows it
+**2026-09-07**
+
+`is_resolvable` refused a phrase only when it was *entirely* generic, so
+"our Company" was caught but "the study", "our team" and "this trial" were not
+— they name nothing on their own in exactly the same way, and they are what a
+clinical or academic PDF is full of.
+
+A leading possessive or demonstrative now disqualifies the phrase regardless of
+its head noun, and the generic set gained the common deictic head-nouns. "The
+Hague" still resolves, because "hague" is not generic.
+
+**Cost:** an entity genuinely named "Our House" would be refused. Erring toward
+refusal is the standing policy here, and the reason is in D11.

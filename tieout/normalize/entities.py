@@ -34,7 +34,17 @@ GENERIC = {
     "bank", "government", "state", "country", "sector", "industry", "market",
     "subsidiary", "parent", "holding", "auditor", "auditors", "shareholders",
     "members", "committee", "authority", "regulator",
+    # deictic head-nouns: common outside finance, equally unresolvable
+    "study", "trial", "team", "project", "report", "document", "survey",
+    "programme", "program", "scheme", "initiative", "department", "division",
+    "region", "site", "facility", "plant", "product", "service", "period",
 }
+
+# A possessive or demonstrative in front makes a phrase deictic whatever the
+# head noun is: "our team", "this study", "their division" all name something
+# only in the document that wrote them.
+DEICTIC = {"our", "its", "their", "my", "your", "his", "her",
+           "this", "that", "these", "those"}
 
 
 def _strip_accents(s: str) -> str:
@@ -42,7 +52,8 @@ def _strip_accents(s: str) -> str:
 
 
 def entity_key(raw: str | None) -> str:
-    """'Delhivery Limited' -> 'delhivery'; 'Mr. Suvir Suren Sujan' -> 'suvir suren sujan'."""
+    """'Northwind Logistics Limited' -> 'northwind logistics';
+    'Dr. Amara Okafor' -> 'amara okafor'."""
     if not raw:
         return ""
     s = _strip_accents(str(raw)).lower()
@@ -67,7 +78,10 @@ def is_resolvable(key: str) -> bool:
         return False
     if key in GENERIC:
         return False
-    remainder = [w for w in key.split() if w not in GENERIC]
+    tokens = key.split()
+    if tokens[0] in DEICTIC:
+        return False
+    remainder = [w for w in tokens if w not in GENERIC]
     return bool(remainder)
 
 

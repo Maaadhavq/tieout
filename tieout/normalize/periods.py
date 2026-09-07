@@ -1,11 +1,12 @@
 """Reporting-period normalization.
 
-Every publisher in the starter set writes the same year differently:
+Publishers write the same year differently, and one of these is not like the
+others:
 
-    Economic Survey   "FY25"
-    RBI               "2024-25"
-    IMF               "FY2024/25"
-    Delhivery         "FY24"        <- a DIFFERENT year
+    a statistical agency   "FY25"
+    a central bank         "2024-25"
+    a multilateral body    "FY2024/25"
+    a company report       "FY24"        <- a DIFFERENT year
 
 All of these resolve here to (start, end, grain). Getting this wrong is
 what makes a naive system call a period difference a contradiction.
@@ -183,7 +184,7 @@ def parse_period(raw: str | None) -> Period | None:
         a, b = _fy_from_start_year(int(m.group(1)))
         return Period(a, b, "annual")
 
-    # bare span: 2024-25 / 2023-24 (RBI house style)
+    # bare span: 2024-25 / 2023-24 (common central-bank house style)
     m = re.search(r"\b(19|20)(\d{2})\s*[-/]\s*(\d{2})\b", s)
     if m:
         start_year = int(m.group(1) + m.group(2))

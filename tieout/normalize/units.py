@@ -52,6 +52,55 @@ class Quantity:
 
 _NUM = re.compile(r"[-+]?\(?\d[\d,\s]*(?:\.\d+)?\)?")
 
+# Words that describe scale or shape rather than the quantity itself; they must
+# not become the unit.
+_NOT_A_UNIT = set(MAGNITUDES) | {
+    "of", "per", "the", "a", "an", "and", "or", "in", "at", "approximately",
+    "about", "around", "over", "under", "nearly", "roughly", "no", "nos",
+}
+
+
+# Spelling variants of ONE unit. Nothing here converts between units -- "mm"
+# and "millimetres" are the same thing written twice, whereas GWh and TWh are
+# not, and no factor for the second pair is ever in evidence.
+UNIT_SYNONYMS = {
+    "millimetre": "mm", "millimeter": "mm",
+    "centimetre": "cm", "centimeter": "cm",
+    "kilometre": "km", "kilometer": "km",
+    "metre": "m_len", "meter": "m_len",          # "m" alone reads as a magnitude
+    "kilogram": "kg", "kilogramme": "kg", "kgs": "kg",
+    "ton": "tonne", "tons": "tonne", "mt": "tonne",
+    "litre": "litre", "liter": "litre",
+    "person": "person", "people": "person", "persons": "person",
+    "employee": "person", "headcount": "person",
+    "pct": "percent", "percentagepoint": "percent",
+}
+
+
+def _singular(token: str) -> str:
+    """Conservative de-pluralisation: long words only, and never -ss/-us/-is."""
+    if len(token) > 4 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
+
+
+def _unit_token(*sources: str | None) -> str | None:
+    """The unit as the document wrote it, reduced to one comparable token.
+
+    'Mn Tons' -> 'tons';  '₹ crore' handled earlier as a currency;
+    'GWh' -> 'gwh'. Returns None when nothing unit-like was written.
+    """
+    for src in sources:
+        for word in re.findall(r"[A-Za-z]+", str(src or "")):
+            token = word.lower()
+            if token in _NOT_A_UNIT or len(token) > 24:
+                continue
+            if token in UNIT_SYNONYMS:
+                return UNIT_SYNONYMS[token]
+            token = _singular(token)
+            return UNIT_SYNONYMS.get(token, token)
+    return None
+
 
 def _decimals(numeric_token: str) -> int:
     """Number of digits after the decimal point as written. '8,142' -> 0."""
@@ -96,7 +145,14 @@ def parse_quantity(value_raw: str | None, unit_raw: str | None = None,
                 unit = canon
                 break
         else:
-            unit = "count"
+            # Anything that is neither a currency nor a percentage keeps its own
+            # written unit as the canonical one. Collapsing them all to "count"
+            # made TWh and GWh -- or mm and inches, or tonnes and kg -- compare
+            # as though they were the same unit, which turns a unit mismatch
+            # into a false contradiction on any document that is not financial.
+            # No conversion is attempted: there is no factor in evidence, which
+            # is the same reason currencies are never converted.
+            unit = _unit_token(unit_raw, magnitude_raw, raw) or "count"
 
     # magnitude
     mag_word, mag_mult = None, 1.0
