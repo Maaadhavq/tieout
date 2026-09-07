@@ -1,7 +1,20 @@
+# secrets
 .env
+
+# python
 __pycache__/
 *.pyc
-.scratch/
-tieout.db
-data/pages/
 .pytest_cache/
+
+# working database and SQLite sidecar files.
+# data/demo.db and data/gold.db ARE committed on purpose -- they are what makes
+# `python run.py --demo` work without an API key. Their -wal/-shm sidecars are
+# not: a stale WAL is replayed on open and would desync the committed corpus.
+tieout.db
+*.db-wal
+*.db-shm
+
+# runtime output
+data/uploads/
+data/pages/
+.scratch/

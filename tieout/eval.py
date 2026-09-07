@@ -81,15 +81,25 @@ def score_extraction(db: Path) -> dict | None:
 
     gold = load_raw()["facts"]
     # Recall against the hand-labelled set: did the extractor find a grounded
-    # fact on the same page for the same metric?
-    found = 0
+    # fact on the same page? Pages the run never reached (a quota or an
+    # interrupt) are counted separately -- charging them to extraction would
+    # understate it, and hiding them would overstate it.
+    found = unread = 0
     for g in gold:
         hit = store.one(
             """SELECT 1 FROM facts f JOIN evidence e ON e.evidence_id = f.evidence_id
                JOIN documents d ON d.doc_id = f.doc_id
                WHERE d.filename = ? AND e.page_no = ? LIMIT 1""",
             (Path(g["doc"]).name, g["page"]))
-        found += bool(hit)
+        if hit:
+            found += 1
+            continue
+        refused = store.one(
+            """SELECT 1 FROM rejects r JOIN documents d ON d.doc_id = r.doc_id
+               WHERE d.filename = ? AND r.page_no = ? LIMIT 1""",
+            (Path(g["doc"]).name, g["page"]))
+        if not refused:
+            unread += 1   # never sent to a model at all
 
     match_types = {r["match_type"]: r["c"] for r in store.q(
         "SELECT match_type, COUNT(*) c FROM evidence GROUP BY match_type")}
@@ -112,6 +122,8 @@ def score_extraction(db: Path) -> dict | None:
         "rejects_by_reason": s["rejects_by_reason"],
         "evidence_match_types": match_types,
         "gold_pages_with_a_grounded_fact": f"{found}/{len(gold)}",
+        "gold_pages_never_read": unread,
+        "gold_pages_read": len(gold) - unread,
         "confidence_buckets": buckets,
         "metrics_discovered": s["metrics_discovered"],
         "relationships_by_label": s["relationships_by_label"],
@@ -181,6 +193,10 @@ def main() -> int:
     print(f"  {'hallucination rate':38s} {e['hallucination_rate'] * 100:5.1f}%"
           f"   <- ungrounded / emitted")
     print(f"  {'gold pages with a grounded fact':38s} {e['gold_pages_with_a_grounded_fact']}")
+    if e["gold_pages_never_read"]:
+        print(f"  {'  of pages the run actually read':38s} "
+              f"{e['gold_pages_with_a_grounded_fact'].split('/')[0]}/{e['gold_pages_read']} "
+              f"({e['gold_pages_never_read']} were never sent to a model)")
     print(f"  {'distinct metrics discovered':38s} {e['metrics_discovered']}")
     print(f"  {'relationships decided by a model':38s} {e['decided_by_llm']}")
     if e["rejects_by_reason"]:

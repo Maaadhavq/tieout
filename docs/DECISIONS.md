@@ -343,3 +343,73 @@ one that existed.
 the UI shows "284/511 pages read", and the evaluation harness prints a line
 saying the run was cut short. A metric that flatters itself when a run fails
 is worse than no metric.
+
+---
+
+## D16 — The verifier finds its cases by query, never by id
+**2026-09-07**
+
+`python -m tieout.verify` proves the four required cases. The tempting
+implementation is to name the four relationship ids that look best on this
+corpus.
+
+**Why not:** that is a slideshow, not a verifier. It would pass on the starter
+set and prove nothing about an unseen document — precisely the
+document-specific logic the assignment rules out. Selection is instead
+"highest-confidence instance of each label, preferring cross-document, and for
+a reconciliation preferring a dimension a reader could not have spotted
+themselves". `tests/test_verify.py` greps the source for row ids and document
+names to keep it honest.
+
+**Cost:** on a corpus where a label genuinely has no instance, the verifier
+exits non-zero rather than showing something adjacent. That is the correct
+answer, and it is why the exit code is worth having.
+
+---
+
+## D17 — Provenance columns are not optional in the CSV export
+**2026-09-07**
+
+Every exported fact row carries source document, page, the verbatim quote and
+the match quality next to the value, and there is no flag to turn them off.
+
+**Why:** the export is the moment a figure leaves this system and enters a
+spreadsheet, where it will be copied, forwarded and eventually acted on. A
+number that arrives without the sentence it came from has lost the only thing
+that made it trustworthy. Making provenance a column rather than an option is
+the whole argument of the project, applied to its own output.
+
+**Cost:** wider files. Trivially worth it.
+
+---
+
+## D18 — The failure case belongs in the tool, not the terminal
+**2026-09-07**
+
+The fourth required case — an extraction failure and how it was handled — was
+only reachable by `curl /api/rejects`. Everything else about the system was
+inspectable in the UI; the one part that proves the system is honest was not.
+
+The header now carries a fifth control, **Refused**, and it shows every claim
+the gate would not accept: what the model said, the quote it offered, the page
+it came from, and why the claim was thrown out. The evidence pane opens that
+page so a reader can look for the quoted span and find it is not there.
+
+**Why it matters more than it looks:** the hallucination rate in the footer is
+the number an evaluator is most likely to disbelieve. Being able to click
+straight from that number to the 239 claims it is made of turns it from a
+statistic into something checkable in about ten seconds. `export refusals`
+does the same for anyone who would rather audit it in a spreadsheet.
+
+**Cost:** one more view to keep working, and a fifth pill in an already busy
+header.
+
+---
+
+## D19 — Views are deep-linkable
+**2026-09-07**
+
+`#corroborates`, `#contradicts`, `#reconciled`, `#insufficient`, `#refused`.
+Fifteen lines, and it means a specific case can be handed over as a link rather
+than a set of instructions — useful in the README, and a safety net if a live
+demo beat misbehaves on camera.

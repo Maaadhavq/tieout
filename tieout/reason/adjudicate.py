@@ -35,6 +35,18 @@ figure, one segment and the whole business, two different aggregates.
 
 Reply with JSON: {"same": bool, "confidence": 0-1, "rationale": "one sentence"}"""
 
+MAX_LABEL_CHARS = 120
+
+
+def _clean_label(label: str) -> str:
+    """Untrusted text from a PDF, on its way into a prompt."""
+    # Whitespace becomes a space BEFORE non-printables are dropped: a tab is
+    # not printable, so stripping first welds "from	operations" into one word.
+    flat = "".join(" " if ch.isspace() else ch
+                   for ch in str(label or "") if ch.isspace() or ch.isprintable())
+    return " ".join(flat.split())[:MAX_LABEL_CHARS]
+
+
 SCHEMA = {
     "type": "object",
     "properties": {

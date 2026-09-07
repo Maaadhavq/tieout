@@ -64,11 +64,40 @@ python run.py               # ingests data/starter-datasets/, then serves
 python run.py --paths some/other.pdf
 ```
 
+**Confirm the four required cases in fifteen seconds, no API key:**
+
+```bash
+python -m tieout.verify
+```
+
+Prints each case with both facts, the full comparability trace, both verbatim
+quotes with document and page, the confidence and the explanation. Exits
+non-zero if a case is missing. The cases are found by *query*, not by
+hard-coded row ids, so it works on any corpus — including one you ingest
+yourself.
+
+**Export the ledger to a spreadsheet:**
+
+```bash
+curl -o facts.csv          localhost:8000/api/export.csv
+curl -o relationships.csv  localhost:8000/api/export/relationships.csv
+curl -o refused.csv        localhost:8000/api/export/refused.csv
+```
+
+`refused.csv` is the working behind the hallucination rate: every claim the
+gate would not accept, with the model's own words intact. A rate nobody can
+audit is just a number.
+
+Every fact row carries its source document, page, verbatim quote and match
+quality alongside the value — a figure in a spreadsheet without the sentence it
+came from is the thing this system exists to avoid. The ledger's export link
+follows whatever filter is active.
+
 **Tests and evaluation:**
 
 ```bash
-python -m pytest -q                  # 80 tests, no API key needed
-python -m tieout.eval --db data/gold.db
+python -m pytest -q                  # 114 tests, no API key needed
+python -m tieout.eval --db data/demo.db
 ```
 
 Python 3.10+. Only real dependencies are PyMuPDF, FastAPI and the Gemini SDK.
@@ -223,8 +252,14 @@ over time, reconciled by the same machinery.
 Three classes, all visible in the tooling rather than described:
 
 - **Ungrounded claims — 72 of 1,967 (3.7%).** The model produced a quote that
-  is not in the page. The gate rejects them and `/api/rejects` shows what it
-  said.
+  is not in the page. Click **Refused** in the header to see every one of them
+  in the ledger: what was claimed, the quote offered, and the page it came from,
+  so you can look for that span yourself and find it is not there. A specimen —
+  `"Revenue from contract with customers ... 8,035.88"` — is a table row label
+  welded to a number from another column: it reads as one phrase and is never
+  contiguous in the document.
+
+  ![The refused view: what the model claimed, the quote it offered, and why the gate would not accept it](docs/screenshot-refused.png)
 - **First-person entities — 163.** Filings say "our Company" and "the Group".
   These are well-grounded facts that name nothing on their own; blocking on
   them would compare every filing's "company" facts against every other's, so
@@ -294,6 +329,21 @@ reported separately in `/api/stats` for exactly this reason.
 - **Confidence is composed, not calibrated.** A defensible product of grounding
   quality, frame completeness and period certainty — but not fitted against
   outcomes, because there are not enough labelled pairs to do that honestly.
+- **A PDF can address the model, and there is no way around that.** Reading the
+  document is the job, so an uploaded file that says "ignore your instructions"
+  reaches the extractor. What is guaranteed is narrower and more useful: nothing
+  enters the store without a quote that is really on the page, so an injection
+  can only ever surface as *"the document said this"*, with the sentence and page
+  shown next to it — never as an invented figure. Fabrications the page does not
+  support are refused whether or not a model was talked into them
+  (`tests/test_injection.py`). Metric labels, which also originate in PDFs and
+  reach the adjudicator's prompt, are clamped to 120 printable characters on one
+  line. This bounds the blast radius; it does not eliminate the class.
+- **Ingest is synchronous.** A large upload holds the request open — 18 pages
+  took 57 seconds. Uploads are capped at 50 MB (`TIEOUT_MAX_UPLOAD_MB`). A job
+  queue would fix the UX and add moving parts an evaluator would have to
+  understand, so at this scale it is a deliberate omission rather than an
+  oversight.
 - **The adjudicator was never exercised on the full corpus.** 1,237 alias
   questions went unanswered because the quota was gone; those pairs are
   suppressed rather than guessed. With budget, `revenue from operations` and
@@ -328,9 +378,13 @@ carrying the headline claims in the bottom decile, and deleted.
 150 lines, no dependencies beyond the normalizers, and it is the entire
 classification logic. `tieout/normalize/` is where the real difficulty lives.
 
+Each view is deep-linkable, so a case can be sent as a link:
+`#corroborates`, `#contradicts`, `#reconciled`, `#insufficient`, `#refused`.
+
 **Everything is inspectable without the UI:**
 
 ```bash
+python -m tieout.verify              # the four cases, with evidence
 curl localhost:8000/api/stats
 curl 'localhost:8000/api/relationships?label=CONTEXTUALLY_RECONCILED'
 curl localhost:8000/api/facts/M1

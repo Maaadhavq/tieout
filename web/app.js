@@ -21,8 +21,26 @@ const HUMAN_DIM = {
 // building ten thousand rows and stalling the tab.
 const PAGE = 300;
 
-const state = { facts: [], rels: [], label: null, selected: null, stats: null,
-                q: "", shown: PAGE };
+const state = { facts: [], rels: [], rejects: [], label: null, selected: null,
+                stats: null, q: "", shown: PAGE, view: "facts" };
+
+const REASON_TEXT = {
+  quote_not_found:
+    "The model gave a quote to support this, and that span is not on the page. " +
+    "Most often it stitched a table row label onto a number from a different " +
+    "column — text that reads as one phrase but is never contiguous in the " +
+    "document. The claim was refused rather than stored.",
+  unresolvable_entity:
+    "Well grounded, but the entity names nothing on its own — filings say " +
+    "\"our Company\" and \"the Group\". Blocking is keyed on the entity, so " +
+    "keeping these would compare every filing's \"company\" facts against every " +
+    "other filing's. Refused rather than guessed at.",
+  unparseable_value:
+    "A measurement whose value could not be read as a number, and with no " +
+    "categorical value to fall back on.",
+  no_quote: "The model returned no quote at all, so there was nothing to verify.",
+  no_entity_or_metric: "The claim named no entity or no metric.",
+};
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, txt) => {
@@ -50,13 +68,15 @@ function toast(msg, ms = 4200) {
 
 /* ------------------------------------------------------------------ load */
 async function load() {
-  const [stats, facts, rels] = await Promise.all([
-    api("/api/stats"), api("/api/facts?limit=2000"), api("/api/relationships?limit=2000"),
+  const [stats, facts, rels, rejects] = await Promise.all([
+    api("/api/stats"), api("/api/facts?limit=2000"),
+    api("/api/relationships?limit=2000"), api("/api/rejects?limit=2000"),
   ]);
-  Object.assign(state, { stats, facts, rels });
+  Object.assign(state, { stats, facts, rels, rejects });
   renderCorpus();
   renderFilters();
   renderRows();
+  if (applyHash()) return;
   if (!state.selected && rels.length) selectRel(pickHighlight(rels));
   else renderReasoning();
 }
@@ -111,12 +131,32 @@ function renderFilters() {
     b.append(el("span", "dot"), el("span", null, name),
              el("span", "n", String(counts[key] || 0)));
     b.onclick = () => {
+      state.view = "facts";
       state.label = state.label === key ? null : key;
       state.shown = PAGE;
       renderFilters(); renderRows();
     };
     box.appendChild(b);
   });
+
+  // The fifth pill is the honest one: what the system refused to believe.
+  // Without it the failure case only exists in the terminal.
+  const refused = el("button", "pill refused");
+  refused.setAttribute("aria-pressed", state.view === "refused");
+  refused.title = "Claims the grounding gate would not accept";
+  refused.append(el("span", "dot"), el("span", null, "Refused"),
+                 el("span", "n", String(state.rejects.length)));
+  refused.onclick = () => {
+    state.view = state.view === "refused" ? "facts" : "refused";
+    state.label = null;
+    state.shown = PAGE;
+    state.selected = null;
+    renderFilters(); renderRows();
+    if (state.view === "refused") {
+      state.rejects.length ? selectReject(state.rejects[0]) : renderReasoning();
+    } else renderReasoning();
+  };
+  box.appendChild(refused);
 }
 
 /* ---------------------------------------------------------------- ledger */
@@ -148,6 +188,7 @@ function badge(f) {
 function renderRows() {
   const box = $("#rows");
   box.innerHTML = "";
+  if (state.view === "refused") return renderRejectRows(box);
   const all = visibleFacts();
   const facts = all.slice(0, state.shown);
   const scope = state.label
@@ -189,6 +230,22 @@ function renderRows() {
     box.appendChild(more);
   }
 
+  // Export what is on screen, not the whole store: the filters are how a user
+  // says which facts they actually want in the spreadsheet.
+  const params = new URLSearchParams();
+  if (state.q) params.set("q", state.q);
+  const link = $("#export-facts");
+  if (link) {
+    link.href = state.label
+      ? `/api/export/relationships.csv?label=${encodeURIComponent(state.label)}`
+      : `/api/export.csv${params.toString() ? "?" + params : ""}`;
+    link.textContent = state.label ? "export these relationships" : "export CSV";
+  }
+
+  renderFoot();
+}
+
+function renderFoot() {
   const s = state.stats;
   // A hallucination rate over hand-labelled facts would be trivially zero, so
   // the reference corpus says what it is instead of quoting a flattering number.
@@ -201,6 +258,105 @@ function renderRows() {
       `${s.ungrounded} of them ungrounded</span>` +
       `<span class="spacer" style="flex:1"></span>` +
       `<span>hallucination rate ${(s.hallucination_rate * 100).toFixed(1)}%</span>`;
+}
+
+/** Refused claims, shown with what the model actually said. Keeping these is
+    what makes the hallucination rate checkable rather than a number to trust. */
+function renderRejectRows(box) {
+  const link = $("#export-facts");
+  if (link) {
+    link.href = "/api/export/refused.csv";
+    link.textContent = "export refusals";
+  }
+  const q = state.q.toLowerCase();
+  const all = state.rejects.filter((r) =>
+    !q || (r.payload_json + r.filename + r.reason).toLowerCase().includes(q));
+  const rows = all.slice(0, state.shown);
+
+  $("#ledger-note").textContent =
+    `${all.length} claims the grounding gate refused` +
+    (rows.length < all.length ? ` · showing ${rows.length}` : "");
+
+  if (!all.length) {
+    box.appendChild(el("div", "empty", "Nothing was refused in this corpus."));
+    return;
+  }
+
+  rows.forEach((r, i) => {
+    let p = {};
+    try { p = JSON.parse(r.payload_json); } catch { /* keep going */ }
+    const row = el("div", "row");
+    row.setAttribute("aria-selected", state.selected?.reject_id === r.reject_id);
+    row.append(el("div", "n", String(i + 1)),
+               el("div", "ent", p.entity || "—"));
+    const m = el("div", "metric");
+    m.appendChild(el("span", null, p.metric || "—"));
+    m.appendChild(el("span", "tag reason", r.reason.replace(/_/g, " ")));
+    row.appendChild(m);
+    row.append(
+      el("div", "value" + (p.value ? "" : " text"), p.value || p.value_text || "—"),
+      el("div", "period", p.period || "—"),
+      el("div", "src", `${shortDoc(r.filename)}·p${r.page_no}`),
+    );
+    row.onclick = () => selectReject(r);
+    box.appendChild(row);
+  });
+
+  if (rows.length < all.length) {
+    const more = el("button", "more", `show ${Math.min(PAGE, all.length - rows.length)} more`);
+    more.onclick = () => { state.shown += PAGE; renderRows(); };
+    box.appendChild(more);
+  }
+  renderFoot();
+}
+
+function selectReject(r) {
+  state.selected = r;
+  renderRows();
+  renderRefusal(r);
+}
+
+function renderRefusal(r) {
+  let p = {};
+  try { p = JSON.parse(r.payload_json); } catch { /* keep going */ }
+  const wrap = $("#reasoning");
+  wrap.style.setProperty("--c", "var(--contradicts)");
+  const claimed = [p.entity, p.metric, p.period].filter(Boolean).join(" · ");
+  const value = [p.value || p.value_text, p.unit].filter(Boolean).join(" ");
+
+  wrap.innerHTML = `
+    <div class="section-head" style="padding:0 0 10px">
+      <h2>Refused claim</h2>
+      <span class="note">${esc(r.reject_id)} · never entered the fact store</span>
+    </div>
+    <div class="fact-card b" style="--c:var(--contradicts)">
+      <span class="k">!</span>
+      <span>${esc(claimed) || "—"}</span>
+      <span class="v">${esc(value) || "—"}</span></div>
+
+    <div class="trace">
+      <div class="trace-head">Why it was refused
+        <span class="sub">${esc(r.reason.replace(/_/g, " "))}</span></div>
+      <div class="check unknown" style="--c:var(--contradicts);grid-template-columns:18px 1fr">
+        <span></span><span style="font-family:var(--sans)">${esc(REASON_TEXT[r.reason] || r.reason)}</span>
+      </div>
+    </div>
+
+    ${p.quote ? `<div class="trace" style="margin-top:8px">
+      <div class="trace-head">The quote it offered
+        <span class="sub">searched for in ${esc(r.filename)} p.${r.page_no}, not found</span></div>
+      <div class="check" style="grid-template-columns:1fr">
+        <span style="font-family:var(--serif);font-size:12px;line-height:1.6">“${esc(p.quote)}”</span>
+      </div></div>` : ""}
+
+    <p class="prose">This is what the hallucination rate is made of. The model's
+    output is kept exactly as it came back, so the number in the footer can be
+    checked rather than taken on trust — open the page below and look for the
+    quote yourself.</p>`;
+
+  renderEvidence([{ doc_id: r.doc_id, page: r.page_no, file: r.filename,
+                    quote: null, bbox: null, key: "!" }], "CONTRADICTS",
+                 "the page the claim came from — the quote above is NOT on it");
 }
 
 const unitSuffix = (f) => {
@@ -336,13 +492,14 @@ function checkRow(t, c) {
 }
 
 /* ---------------------------------------------------------------- evidence */
-async function renderEvidence(sides, label) {
+async function renderEvidence(sides, label, caption) {
   const box = $("#evidence");
   box.style.setProperty("--c", cvar(label));
   box.innerHTML = `
     <div class="section-head" style="padding:0 0 9px">
       <h2>Source evidence</h2>
-      <span class="note">every quote below was located in the PDF before the fact was stored</span>
+      <span class="note">${esc(caption
+        || "every quote below was located in the PDF before the fact was stored")}</span>
     </div>
     <div class="ev-grid" id="ev-grid"></div>`;
 
@@ -365,7 +522,8 @@ async function renderEvidence(sides, label) {
     const quote = data.quote || "";
     card.querySelector(".ev-quote").innerHTML = quote
       ? `<mark>${esc(quote)}</mark>`
-      : '<span style="color:var(--faint)">quote unavailable</span>';
+      : '<span style="color:var(--faint)">no located span — open the page image '
+        + 'and search for the claimed quote yourself</span>';
 
     card.querySelector(".ev-toggle").onclick = () =>
       togglePage(card, data.doc_id, data.page_no || s.page, data.bbox_json);
@@ -437,6 +595,40 @@ $("#search").oninput = (e) => {
   state.shown = PAGE;
   renderRows();
 };
+
+/* ------------------------------------------------------------ deep links */
+/* #refused, #contradicts, #reconciled, #corroborates, #insufficient.
+   Being able to send someone a link straight to the contradiction is worth
+   fifteen lines -- it also makes the README and the demo reproducible. */
+const HASH_TO_LABEL = {
+  corroborates: "CORROBORATES", contradicts: "CONTRADICTS",
+  reconciled: "CONTEXTUALLY_RECONCILED", insufficient: "INSUFFICIENT_EVIDENCE",
+};
+
+function applyHash() {
+  const key = (location.hash || "").replace("#", "").toLowerCase();
+  if (!key) return false;
+  state.shown = PAGE;
+  if (key === "refused") {
+    state.view = "refused";
+    state.label = null;
+    renderFilters(); renderRows();
+    if (state.rejects.length) selectReject(state.rejects[0]);
+    return true;
+  }
+  if (HASH_TO_LABEL[key]) {
+    state.view = "facts";
+    state.label = HASH_TO_LABEL[key];
+    renderFilters(); renderRows();
+    const hit = state.rels.filter((r) => r.label === state.label)
+      .sort((a, b) => b.confidence - a.confidence)[0];
+    if (hit) selectRel(hit);
+    return true;
+  }
+  return false;
+}
+
+window.addEventListener("hashchange", applyHash);
 
 load().catch((e) => {
   $("#rows").innerHTML = `<div class="empty"><strong>Could not load</strong>${esc(e.message)}</div>`;

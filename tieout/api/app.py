@@ -5,13 +5,15 @@ the UI is reachable as JSON, so the system can be inspected with curl alone.
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
-import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..ingest.extract import Extractor
@@ -66,21 +68,73 @@ def documents():
     )
 
 
+MAX_UPLOAD_MB = int(os.environ.get("TIEOUT_MAX_UPLOAD_MB", "50"))
+_CHUNK = 1 << 20
+
+
+def _safe_dest(filename: str | None) -> Path:
+    """Resolve an upload destination that cannot escape data/uploads/.
+
+    The filename is attacker-controlled. `UPLOADS / filename` with
+    "../../../evil.pdf" writes outside the repository entirely, so take the
+    basename and then check the resolved path really is inside UPLOADS -- the
+    second check catches anything the first misses on a platform whose path
+    rules differ from this one's.
+    """
+    name = Path(filename or "").name.strip()
+    if not name or name in {".", ".."} or not name.lower().endswith(".pdf"):
+        raise HTTPException(400, "expected a .pdf file")
+    dest = (UPLOADS / name).resolve()
+    if not str(dest).startswith(str(UPLOADS.resolve())):
+        raise HTTPException(400, "invalid filename")
+    return dest
+
+
+async def _write_capped(src, dest: Path) -> None:
+    """Stream to disk, refusing anything over the cap and anything that is not
+    actually a PDF. Checking the magic bytes matters because ingest of a
+    non-PDF raises deep inside PyMuPDF, which would surface as a 500."""
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    written, head = 0, b""
+    try:
+        with dest.open("wb") as fh:
+            while chunk := await src.read(_CHUNK):
+                if not head:
+                    head = chunk[:5]
+                    if not head.startswith(b"%PDF"):
+                        raise HTTPException(
+                            400, "that file is not a PDF (no %PDF header)")
+                written += len(chunk)
+                if written > limit:
+                    raise HTTPException(
+                        413, f"file is larger than the {MAX_UPLOAD_MB} MB limit")
+                fh.write(chunk)
+        if not written:
+            raise HTTPException(400, "the uploaded file is empty")
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
+
+
 @app.post("/api/documents")
 async def upload(file: UploadFile = File(...)):
     """Accepts a new PDF, extracts it, and relates it to existing knowledge
     without recomputing anything already known."""
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "only PDF uploads are accepted")
+    dest = _safe_dest(file.filename)
     UPLOADS.mkdir(parents=True, exist_ok=True)
-    dest = UPLOADS / file.filename
-    with dest.open("wb") as fh:
-        shutil.copyfileobj(file.file, fh)
+    await _write_capped(file, dest)
 
     st = store()
     extractor = Extractor(st, offline=_offline)
-    report = ingest_document(st, dest, extractor)
-    rel = build_mod.build(st, incremental_doc_id=report.doc_id, offline=_offline)
+    try:
+        report = ingest_document(st, dest, extractor)
+        rel = build_mod.build(st, incremental_doc_id=report.doc_id, offline=_offline)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a bad document is the user's answer, not a crash
+        dest.unlink(missing_ok=True)
+        raise HTTPException(
+            400, f"could not read that PDF: {type(exc).__name__}: {exc}") from exc
     return {
         "doc_id": report.doc_id,
         "filename": report.filename,
@@ -195,6 +249,129 @@ def rejects(limit: int = Query(200, le=2000)):
     return store().q(
         "SELECT r.*, d.filename FROM rejects r JOIN documents d ON d.doc_id = r.doc_id "
         "ORDER BY r.created_at DESC LIMIT ?", (limit,))
+
+
+# ------------------------------------------------------------------ export
+# Every row carries its own provenance -- document, page, the verbatim quote and
+# how that quote matched. A figure that lands in a spreadsheet without the
+# sentence it came from is exactly the thing this system exists to avoid, so the
+# export refuses to be a bag of numbers.
+FACT_COLUMNS = [
+    ("entity", "entity_raw"), ("metric", "metric_raw"), ("kind", "fact_kind"),
+    ("value_as_written", "value_raw"), ("value_text", "value_text"),
+    ("value_canonical", "value_num"), ("unit", "unit_canon"),
+    ("unit_as_written", "unit_raw"), ("magnitude", "magnitude_raw"),
+    ("period_as_written", "period_raw"), ("period_start", "period_start"),
+    ("period_end", "period_end"), ("period_grain", "period_grain"),
+]
+BASIS_COLUMNS = ["consolidation", "vintage", "price_basis", "valuation",
+                 "measure", "geography", "adjustment"]
+PROVENANCE_COLUMNS = [
+    ("source_document", "filename"), ("page", "page_no"), ("quote", "quote"),
+    ("quote_match", "match_type"), ("confidence", "confidence"),
+    ("grounding_confidence", "grounding_conf"),
+    ("frame_completeness", "frame_completeness"), ("fact_id", "fact_id"),
+]
+
+
+NEWLINE = chr(10)
+
+
+def _csv_response(header: list[str], rows, stem: str) -> StreamingResponse:
+    def generate():
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator=NEWLINE)
+        writer.writerow(header)
+        yield buf.getvalue()
+        for row in rows:
+            buf.seek(0), buf.truncate(0)
+            writer.writerow(row)
+            yield buf.getvalue()
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return StreamingResponse(
+        generate(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-{stamp}.csv"'})
+
+
+@app.get("/api/export.csv")
+def export_facts(entity: str | None = None, metric: str | None = None,
+                 doc: str | None = None, kind: str | None = None,
+                 min_confidence: float = 0.0, q: str | None = None,
+                 limit: int = Query(50000, le=200000)):
+    """The fact ledger as a spreadsheet, one row per fact, provenance included.
+
+    Takes the same filters as /api/facts, so whatever is on screen is what
+    exports."""
+    facts_rows = facts(entity=entity, metric=metric, doc=doc, kind=kind,
+                       min_confidence=min_confidence, q=q, limit=limit)
+    header = ([h for h, _ in FACT_COLUMNS]
+              + [f"basis_{b}" for b in BASIS_COLUMNS]
+              + [h for h, _ in PROVENANCE_COLUMNS])
+
+    def rows():
+        for f in facts_rows:
+            basis = json.loads(f.get("basis_json") or "{}")
+            yield ([f.get(k) for _, k in FACT_COLUMNS]
+                   + [basis.get(b) for b in BASIS_COLUMNS]
+                   + [f.get(k) for _, k in PROVENANCE_COLUMNS])
+
+    return _csv_response(header, rows(), "tieout-facts")
+
+
+@app.get("/api/export/relationships.csv")
+def export_relationships(label: str | None = None, entity: str | None = None,
+                         dimension: str | None = None,
+                         min_confidence: float = 0.0,
+                         limit: int = Query(50000, le=200000)):
+    """Every relationship with both sides, both sources, and the explanation."""
+    rels = relationships(label=label, entity=entity, dimension=dimension,
+                         min_confidence=min_confidence, limit=limit)
+    header = ["label", "dimension", "confidence", "decided_by", "entity", "metric",
+              "a_value", "a_unit", "a_period", "a_document", "a_page", "a_fact_id",
+              "b_metric", "b_value", "b_unit", "b_period", "b_document", "b_page",
+              "b_fact_id", "value_delta", "explanation", "rule_trace"]
+
+    def rows():
+        for r in rels:
+            trace = " | ".join(
+                f"{c['dimension']}={c['status']}"
+                for c in json.loads(r.get("rule_trace_json") or "[]"))
+            yield [r["label"], r["dimension"], r["confidence"], r["decided_by"],
+                   r["entity_raw"], r["metric_raw"],
+                   r["a_value"] or r["a_text"], r["a_unit"], r["a_period"],
+                   r["a_doc"], r["a_page"], r["fact_a"],
+                   r["b_metric"], r["b_value"] or r["b_text"], r["b_unit"],
+                   r["b_period"], r["b_doc"], r["b_page"], r["fact_b"],
+                   r["value_delta"], r["explanation"], trace]
+
+    return _csv_response(header, rows(), "tieout-relationships")
+
+
+@app.get("/api/export/refused.csv")
+def export_refused(limit: int = Query(50000, le=200000)):
+    """What the gate would not accept, with the model's own output intact.
+
+    Exported for the same reason it is stored: a hallucination rate nobody can
+    audit is just a number. This is the working."""
+    rows_in = store().q(
+        "SELECT r.*, d.filename FROM rejects r JOIN documents d ON d.doc_id = r.doc_id "
+        "ORDER BY r.reason, r.created_at LIMIT ?", (limit,))
+    header = ["reason", "source_document", "page", "claimed_entity", "claimed_metric",
+              "claimed_value", "claimed_unit", "claimed_period",
+              "quote_the_model_offered", "reject_id"]
+
+    def rows():
+        for r in rows_in:
+            try:
+                p = json.loads(r["payload_json"])
+            except (ValueError, TypeError):
+                p = {}
+            yield [r["reason"], r["filename"], r["page_no"], p.get("entity"),
+                   p.get("metric"), p.get("value") or p.get("value_text"),
+                   p.get("unit"), p.get("period"), p.get("quote"), r["reject_id"]]
+
+    return _csv_response(header, rows(), "tieout-refused")
 
 
 @app.get("/api/metrics")

@@ -118,9 +118,17 @@ facts rejected, relationships added.
 - [ ] `data/unseen/delhivery-investor-presentation-2025-08-01.pdf` ready to drag in
       (BSE filing, not in the starter set; needs a GEMINI_API_KEY to extract live)
 - [ ] Numbers re-checked with `python -m tieout.eval --db data/demo.db`
+- [ ] `python -m tieout.verify` exits 0 (all four cases present in the corpus)
 - [ ] Pick the clearest instance of each label first; some pairs are noisier
 - [ ] Browser at 1440×900, zoom 100%, no bookmarks bar
 - [ ] Under 3:00. If tight, cut the second corroboration example, not the failure section.
+
+## If a live beat fails while recording
+
+`python -m tieout.verify` prints all four cases with evidence, traces and page
+numbers in one screen. It is a legitimate fallback for the 1:00–2:15 stretch and
+takes about ten seconds — better than fighting the UI on camera. Do not use it
+for the whole demo: the evidence viewer is the thing worth showing.
 
 ## What not to do
 

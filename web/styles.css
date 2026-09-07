@@ -61,6 +61,13 @@ header {
 .pill[data-label="CONTRADICTS"] { --c: var(--contradicts); }
 .pill[data-label="CONTEXTUALLY_RECONCILED"] { --c: var(--reconciled); }
 .pill[data-label="INSUFFICIENT_EVIDENCE"] { --c: var(--insufficient); }
+.pill.refused { --c: var(--contradicts); margin-left: 4px; }
+.pill.refused .dot { background: none; border: 1.5px solid var(--c); }
+
+.tag.reason {
+  background: color-mix(in oklab, var(--contradicts) 14%, transparent);
+  color: color-mix(in oklab, var(--contradicts) 78%, black);
+}
 
 #upload-btn {
   padding: 6px 12px; border-radius: 5px; border: 1px solid var(--accent);
@@ -83,6 +90,13 @@ main { flex: 1; display: grid; grid-template-columns: 680px minmax(0, 1fr); min-
   margin: 0; font-size: 11.5px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .07em; color: var(--muted);
 }
+.export {
+  font-family: var(--mono); font-size: 10.5px; color: var(--accent);
+  text-decoration: none; border: 1px solid var(--rule); border-radius: 4px;
+  padding: 3px 7px; white-space: nowrap;
+}
+.export:hover { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
+
 .section-head .note { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
 
 #search {
