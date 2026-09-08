@@ -155,3 +155,28 @@ def test_refused_export_shows_the_models_own_words(demo_client):
 def test_rejects_endpoint_is_paginated_and_bounded(demo_client):
     assert len(demo_client.get("/api/rejects?limit=5").json()) == 5
     assert demo_client.get("/api/rejects?limit=999999").status_code == 422
+
+
+def test_an_upload_without_a_key_explains_itself(client, tmp_path):
+    """A reviewer who has not set GEMINI_API_KEY will still click Add PDF. The
+    extractor can only replay cached pages, so a document nobody has seen yields
+    nothing -- and the response said "0 facts kept, 0 refused", which reads as a
+    broken system rather than an unconfigured one.
+
+    The response now carries `offline`, so the client can tell those apart and
+    say which it was.
+    """
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "Contoso Freight reported revenue of Rs. 40 crore in FY2024.")
+    pdf = doc.tobytes()
+    doc.close()
+
+    r = post(client, pdf, "keyless-check.pdf")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["offline"] is True, "client cannot tell an unconfigured run from an empty one"
+    assert body["facts_kept"] == 0, "offline runs cannot extract from an unseen page"
+    assert body["pages_total"] >= 1

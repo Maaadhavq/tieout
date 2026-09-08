@@ -595,11 +595,22 @@ $("#upload-input").onchange = async (e) => {
     const fd = new FormData();
     fd.append("file", file);
     const r = await api("/api/documents", { method: "POST", body: fd });
+    // No key means the extractor can only replay cached pages, and a document
+    // nobody has seen has none. Saying "0 facts kept" for that reads as a
+    // broken system rather than an unconfigured one.
+    const nothingRead = !r.already_ingested && r.offline && r.facts_kept === 0;
     toast(r.already_ingested
       ? `${r.filename} was already in the layer — nothing recomputed.`
+      : nothingRead
+      ? `${r.filename} was stored, but nothing was extracted from its ` +
+        `${r.pages_total} page${r.pages_total === 1 ? "" : "s"}: this run has no ` +
+        `GEMINI_API_KEY, so the extractor can only replay the committed cache. ` +
+        `Put a key in .env and restart to read new documents. Everything already ` +
+        `in the ledger is unaffected.`
       : `${r.filename}: ${r.facts_kept} facts kept, ${r.facts_rejected} refused ` +
         `(${((r.hallucination_rate ?? 0) * 100).toFixed(0)}% ungrounded), ` +
-        `${r.relationships_added} new relationships — nothing existing recomputed.`, 8000);
+        `${r.relationships_added} new relationships — nothing existing recomputed.`,
+      nothingRead ? 12000 : 8000);
     await load();
   } catch (err) {
     toast(`Upload failed: ${err.message}`, 7000);

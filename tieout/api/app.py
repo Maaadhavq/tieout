@@ -140,6 +140,10 @@ async def upload(file: UploadFile = File(...)):
         "doc_id": report.doc_id,
         "filename": report.filename,
         "already_ingested": report.already_ingested,
+        # Without a key the extractor replays the cache and nothing else. A new
+        # document has no cached pages, so it yields nothing -- which the client
+        # has to be able to explain rather than report as "0 facts kept".
+        "offline": _offline,
         "pages_total": report.pages_total,
         "pages_scanned": report.pages_scanned,
         "pages_skipped": report.pages_skipped,

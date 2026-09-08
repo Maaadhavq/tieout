@@ -1,0 +1,68 @@
+name: Deploy the evidence viewer to GitHub Pages
+
+# The snapshot is ~60 MB of page images. Building it on the runner and
+# deploying the artifact keeps all of that out of the repository, so a clone
+# stays the size of the source and the starter PDFs.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "web/**"
+      - "tools/build_static.py"
+      - "data/demo.db"
+      - "tieout/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      # No API key: the snapshot replays the committed extraction cache, so the
+      # figures it serves are the same ones `python run.py --demo` prints.
+      - name: Prove the four required cases before publishing anything
+        run: python -m tieout.verify
+
+      - name: Run the test suite
+        run: python -m pytest -q
+
+      - name: Build the static snapshot
+        run: python tools/build_static.py --db data/demo.db --out _site
+
+      - name: Report what was built
+        run: du -sh _site && ls -1 _site && du -sh _site/api/pages
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

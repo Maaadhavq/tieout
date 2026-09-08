@@ -59,7 +59,9 @@ def test_the_readme_leads_with_the_command_that_proves_the_four_cases():
     fastest proof in the repository was the fifth thing an evaluator met."""
     readme = io.open(ROOT / "README.md", encoding="utf-8").read()
     verify_at = readme.index("python -m tieout.verify")
-    for later in ("python run.py --gold", "python run.py --demo", "Live extraction"):
+    # Anchored on the commands, not on headings: headings get reworded, and the
+    # property being guarded is that `verify` is the first thing a reader runs.
+    for later in ("python run.py --gold", "python run.py --demo", "cp .env.example"):
         assert verify_at < readme.index(later), \
             f"`python -m tieout.verify` no longer comes before {later!r}"
     # It sat at character ~2250 before this; keep it near the top of the page,
