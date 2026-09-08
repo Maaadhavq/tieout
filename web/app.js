@@ -142,7 +142,18 @@ function renderFilters() {
       state.view = "facts";
       state.label = state.label === key ? null : key;
       state.shown = PAGE;
+      // Re-select inside the new filter. This used to leave the reasoning pane
+      // showing whatever was selected before -- most visibly a refused claim,
+      // so the header said "Contradicts" while the pane showed a refusal from
+      // the Refused view. Picking a representative pair also means one click on
+      // a pill is enough to see an example of that label.
+      const pool = state.label
+        ? state.rels.filter((r) => r.label === state.label)
+        : state.rels;
+      state.selected = null;
       renderFilters(); renderRows();
+      if (pool.length) selectRel(pickHighlight(pool));
+      else renderReasoning();
     };
     box.appendChild(b);
   });
@@ -431,6 +442,12 @@ function renderSingleFact(f) {
 
 function renderReasoning() {
   const r = state.selected;
+  // The selection can be a refused claim rather than a relationship: the
+  // Refused pill calls selectReject(), and anything that re-renders afterwards
+  // -- an upload, a filter change -- lands back here. A reject has no `label`,
+  // so reading r.label.replace() threw, and because the upload handler awaited
+  // this inside its try, a successful ingest was reported as "Upload failed".
+  if (r && r.reject_id) return renderRefusal(r);
   if (!r) {
     $("#reasoning").innerHTML = `<div class="empty"><strong>Nothing selected</strong>
       Pick a fact on the left to see how it was compared.</div>`;
@@ -475,9 +492,22 @@ function renderReasoning() {
     </div>
     <p class="prose">${esc(r.explanation)}</p>`;
 
+  // Label each card with the one thing that separates the two sides, so a
+  // same-page pair does not read as the same evidence shown twice.
+  const sideNote = (basisJson, period) => {
+    let basis = {};
+    try { basis = JSON.parse(basisJson || "{}"); } catch { /* none */ }
+    if (r.dimension && basis[r.dimension]) {
+      return String(basis[r.dimension]).replace(/_/g, " ");
+    }
+    if (r.dimension === "period" && period) return String(period);
+    return null;
+  };
   renderEvidence([
-    { doc_id: null, page: r.a_page, file: r.a_doc, fact: r.fact_a, key: "A" },
-    { doc_id: null, page: r.b_page, file: r.b_doc, fact: r.fact_b, key: "B" },
+    { doc_id: null, page: r.a_page, file: r.a_doc, fact: r.fact_a, key: "A",
+      note: sideNote(r.a_basis, r.a_period) },
+    { doc_id: null, page: r.b_page, file: r.b_doc, fact: r.fact_b, key: "B",
+      note: sideNote(r.b_basis, r.b_period) },
   ], r.label);
 }
 
@@ -520,9 +550,16 @@ async function renderEvidence(sides, label, caption) {
   const grid = $("#ev-grid");
   for (const s of sides) {
     const card = el("div", "ev" + (s.key === "B" ? " b" : ""));
+    // When both sides come off the same page -- an annual report stating
+    // revenue standalone and consolidated in consecutive sentences -- the two
+    // cards carry the same filename and the same page number, and the quotes
+    // differ by one word in the middle of a line. Without the dimension that
+    // separates them printed here, a reader's first read is that the tool has
+    // shown the same evidence twice.
     card.innerHTML = `<div class="ev-head">
         <span style="font-weight:600">${s.key}</span>
         <span class="file">${esc(s.file || "")}</span>
+        ${s.note ? `<span class="ev-dim">${esc(s.note)}</span>` : ""}
         <button class="ev-toggle">page image</button>
         <span>p.${s.page}</span>
       </div><div class="ev-quote">loading…</div>`;
@@ -536,8 +573,8 @@ async function renderEvidence(sides, label, caption) {
     const quote = data.quote || "";
     card.querySelector(".ev-quote").innerHTML = quote
       ? `<mark>${esc(quote)}</mark>`
-      : '<span style="color:var(--faint)">no located span — open the page image '
-        + 'and search for the claimed quote yourself</span>';
+      : '<span style="color:var(--faint)">Nothing to highlight — the quote above '
+        + 'is not on this page. Open it and look for yourself.</span>';
 
     card.querySelector(".ev-toggle").onclick = () =>
       togglePage(card, data.doc_id, data.page_no || s.page, data.bbox_json);
@@ -611,13 +648,20 @@ $("#upload-input").onchange = async (e) => {
         `(${((r.hallucination_rate ?? 0) * 100).toFixed(0)}% ungrounded), ` +
         `${r.relationships_added} new relationships — nothing existing recomputed.`,
       nothingRead ? 12000 : 8000);
-    await load();
   } catch (err) {
     toast(`Upload failed: ${err.message}`, 7000);
   } finally {
     btn.disabled = false;
     btn.textContent = "Add PDF";
     e.target.value = "";
+  }
+  // Refresh AFTER the try: the document is already ingested by this point, so
+  // a failure to redraw is a display problem, not an upload problem, and must
+  // not be reported as one.
+  try {
+    await load();
+  } catch (err) {
+    toast(`Uploaded, but the view could not refresh: ${err.message}`, 7000);
   }
 };
 

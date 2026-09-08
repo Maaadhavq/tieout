@@ -289,6 +289,14 @@ footer.ledger-foot .bad { color: var(--contradicts); }
   font-family: var(--mono); font-size: 12px; color: var(--muted);
 }
 .ev-head .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+/* The dimension that separates the two sides. Load-bearing when both cards
+   cite the same page: without it they read as duplicated evidence. */
+.ev-dim {
+  flex-shrink: 0; padding: 2px 7px; border-radius: 4px; font-size: 11px;
+  background: color-mix(in oklab, var(--c, var(--insufficient)) 15%, transparent);
+  color: color-mix(in oklab, var(--c, var(--insufficient)) 80%, black);
+  border: 1px solid color-mix(in oklab, var(--c, var(--insufficient)) 32%, transparent);
+}
 /* The quote is set as a pulled quotation, not as a form field: it is the one
    piece of text on the screen that came verbatim out of somebody's PDF. */
 .ev-quote {

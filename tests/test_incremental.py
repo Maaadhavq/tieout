@@ -151,3 +151,58 @@ def test_the_adjudicator_uses_a_model_that_exists_and_falls_through():
                        "revenue from operations") is True
     assert len(tried) > 1, f"did not fall through the chain: {tried}"
     assert adj.calls == 1
+
+
+def test_a_document_ingested_with_no_key_is_read_again_once_there_is_one(tmp_path):
+    """Uploading a PDF without GEMINI_API_KEY records the document and extracts
+    nothing -- the extractor can only replay a cache that has never seen it.
+
+    Dedup is by content hash and did not look at whether anything was actually
+    extracted, so every later upload of that file answered "already in the layer
+    -- nothing recomputed". The file could never be read, and the message sounded
+    like success. Adding a key did not help; you had to know to delete the row.
+    """
+    import fitz
+
+    from tieout.ingest.pipeline import ingest_document
+    from tieout.store.db import Store
+
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 100), "Contoso Freight revenue was Rs. 40 crore in FY2024.")
+    pdf = tmp_path / "contoso.pdf"
+    pdf.write_bytes(doc.tobytes())
+    doc.close()
+
+    store = Store(tmp_path / "t.db")
+
+    from tieout.ingest.extract import PageResult
+
+    class Extractor:
+        """Extracts nothing, which is exactly what an offline run does with a
+        page it has never cached."""
+        def __init__(self, offline):
+            self.offline = offline
+            self.calls = 0
+            self.cache_hits = 0
+        def extract_pages(self, pages, workers=6, progress=None):
+            return [PageResult(page_no=p.number, facts=[], cached=False)
+                    for p in pages]
+
+    offline = Extractor(offline=True)
+    first = ingest_document(store, pdf, offline)
+    assert first.already_ingested is False
+    assert first.kept == 0, "an offline run cannot extract from an unseen page"
+
+    # Same bytes, but a model is available now: it must not be waved through.
+    second = ingest_document(store, pdf, Extractor(offline=False))
+    assert second.already_ingested is False, \
+        "an empty offline record still blocks the document from ever being read"
+
+    # And exactly one document row survives -- the stale one is replaced.
+    rows = store.q("SELECT doc_id FROM documents")
+    assert len(rows) == 1, f"re-ingest left {len(rows)} document rows"
+
+    # And the re-read only happens when a model is actually available: still
+    # offline, the empty record is left alone rather than churned every upload.
+    third = ingest_document(store, pdf, Extractor(offline=True))
+    assert third.already_ingested is True,         "an offline re-upload re-ingested instead of deduping"

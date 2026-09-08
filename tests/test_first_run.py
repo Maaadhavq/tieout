@@ -98,3 +98,30 @@ def test_the_page_cannot_serve_a_stale_script():
         assert api.asset_stamp() != before, "the stamp ignored a changed asset"
     finally:
         os.utime(js, (mtime, mtime))
+
+
+def test_the_viewer_survives_uploading_while_a_refusal_is_selected():
+    """Clicking the Refused pill puts a *reject* in state.selected. A reject has
+    no `label`, so the next re-render -- an upload, a filter change -- hit
+    `r.label.replace(...)` in renderReasoning and threw
+    "Cannot read properties of undefined (reading 'replace')".
+
+    Worse, the upload handler awaited that re-render inside its own try, so a
+    successful ingest was reported to the user as "Upload failed".
+
+    This is a structural guard, not a behavioural one -- there is no JS test
+    harness here. It asserts the two properties that were wrong: the reject
+    branch exists, and the refresh happens after the upload's catch.
+    """
+    js = io.open(ROOT / "web" / "app.js", encoding="utf-8").read()
+
+    head = js.index("function renderReasoning()")
+    body = js[head:head + 900]
+    assert "reject_id" in body, \
+        "renderReasoning no longer handles a refused claim being selected"
+
+    failed_at = js.index("Upload failed")
+    refresh_at = js.rindex("await load();")
+    assert refresh_at > failed_at, \
+        "the post-upload refresh is back inside the try -- a render error " \
+        "would again be reported as an upload failure"

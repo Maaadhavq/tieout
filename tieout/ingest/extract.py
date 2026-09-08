@@ -206,7 +206,12 @@ class Extractor:
         hit = self.store.cache_get(key)
         if hit is not None:
             self.cache_hits += 1
-            return PageResult(page_no, hit.get("facts", []), cached=True)
+            # The cache records which model answered, under "_model". Replaying
+            # without it left every fact in the committed corpus with no
+            # provenance, which is the field that shows those facts are model
+            # output rather than hand-written.
+            return PageResult(page_no, hit.get("facts", []), cached=True,
+                              model=hit.get("_model"))
 
         if self.offline:
             return PageResult(page_no, [], cached=False, error="not cached and running offline")

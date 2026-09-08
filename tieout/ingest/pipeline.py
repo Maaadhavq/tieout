@@ -89,12 +89,22 @@ def ingest_document(store, path: str | Path, extractor: Extractor,
 
     existing = store.doc_by_hash(sha)
     if existing and not force:
-        r = IngestReport(existing["doc_id"], path.name, already_ingested=True)
-        r.pages_total = existing["page_count"]
-        r.kept = store.one(
+        kept = store.one(
             "SELECT COUNT(*) c FROM facts WHERE doc_id = ?", (existing["doc_id"],)
         )["c"]
-        return r
+        # A document ingested during an offline run holds nothing: the extractor
+        # could only replay a cache that had never seen it. Reporting "already in
+        # the layer" then is true and useless -- it means this file can never be
+        # read, and the message sounds like success. If there is a model
+        # available now, drop the empty record and read it properly.
+        stale_and_empty = kept == 0 and not getattr(extractor, "offline", False)
+        if not stale_and_empty:
+            r = IngestReport(existing["doc_id"], path.name, already_ingested=True)
+            r.pages_total = existing["page_count"]
+            r.kept = kept
+            return r
+        for table in ("rejects", "evidence", "facts", "documents"):
+            store.run(f"DELETE FROM {table} WHERE doc_id = ?", (existing["doc_id"],))
 
     pages = read_pages(path)
     doc_id = existing["doc_id"] if existing else new_id("doc")
@@ -121,7 +131,7 @@ def ingest_document(store, path: str | Path, extractor: Extractor,
         page = by_no[res.page_no]
         for raw in res.facts:
             report.emitted += 1
-            reason = _store_one(store, doc_id, page, raw)
+            reason = _store_one(store, doc_id, page, raw, res.model)
             if reason:
                 report.rejected += 1
                 report.reject_reasons[reason] = report.reject_reasons.get(reason, 0) + 1
@@ -140,8 +150,16 @@ def _reject(store, doc_id, page_no, reason, payload):
     return reason
 
 
-def _store_one(store, doc_id: str, page, raw: dict) -> str | None:
-    """Returns a rejection reason, or None if the fact was stored."""
+def _store_one(store, doc_id: str, page, raw: dict,
+               model: str | None = None) -> str | None:
+    """Returns a rejection reason, or None if the fact was stored.
+
+    `model` is which Gemini model actually answered for this page. It was
+    hard-coded to None, so every extracted fact recorded no provenance at all
+    even though the cache had it. That is the field a sceptical reader would
+    check to confirm the corpus is model output rather than hand-written, and
+    it is the one field the gold store fills in to say the opposite.
+    """
     quote = (raw.get("quote") or "").strip()
     if not quote:
         return _reject(store, doc_id, page.number, "no_quote", raw)
@@ -209,7 +227,7 @@ def _store_one(store, doc_id: str, page, raw: dict) -> str | None:
         "period_grain": period.grain if period else "unknown",
         "basis_json": json.dumps(known_basis, ensure_ascii=False),
         "qualifiers_json": json.dumps(leftover, ensure_ascii=False),
-        "extraction_model": None,
+        "extraction_model": model,
         "extraction_conf": 1.0,
         "grounding_conf": g.confidence,
         "frame_completeness": 0.0,
