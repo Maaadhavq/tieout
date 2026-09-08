@@ -94,7 +94,7 @@ the gate would not accept. Click the first one.
 > Another 163 were perfectly well grounded but said 'our Company', which names
 > nothing on its own.
 >
-> And 17 of the 22 contradictions are table artifacts: borrowings 1,316 against
+> And 14 of the 19 contradictions are table artifacts: borrowings 1,316 against
 > 1,697, same date, same page — current versus non-current, with the row header
 > lost because reading order flattens a table into a stream. Those are reported
 > at 41 to 42% confidence saying exactly that, rather than asserted. The fix is

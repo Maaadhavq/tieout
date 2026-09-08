@@ -20,6 +20,8 @@ from __future__ import annotations
 import json
 import os
 
+from ..ingest.extract import MODEL_CHAIN
+
 MAX_ADJUDICATIONS = int(os.environ.get("TIEOUT_MAX_ADJUDICATIONS", "40"))
 
 SYSTEM = """You settle one narrow question about financial and statistical terminology.
@@ -62,11 +64,22 @@ class Adjudicator:
     def __init__(self, store, model: str | None = None, api_key: str | None = None,
                  offline: bool = False, budget: int = MAX_ADJUDICATIONS):
         self.store = store
-        self.model = model or os.environ.get("TIEOUT_MODEL", "gemini-2.5-flash")
+        # Share the extractor's model chain. This defaulted to a hard-coded
+        # "gemini-2.5-flash", which returns 404 NOT_FOUND on a key issued after
+        # that alias was retired -- so every adjudication raised, the exception
+        # below turned it into "unresolved", and the component silently never
+        # ran. `metric_aliases` stayed empty and /api/stats reported
+        # "relationships decided by a model: 0", which reads like the rules
+        # settled everything rather than like a dead dependency.
+        chain = [model or os.environ.get("TIEOUT_MODEL") or MODEL_CHAIN[0]]
+        chain += [m for m in MODEL_CHAIN if m != chain[0]]
+        self._chain = chain
+        self.model = chain[0]
         self._api_key = api_key or os.environ.get("GEMINI_API_KEY") or ""
         self.offline = offline or not self._api_key
         self.budget = budget
         self.calls = 0
+        self.last_error: str | None = None
         self._client = None
         self._cache: dict[tuple[str, str], bool] = {}
         self.load_aliases()
@@ -109,19 +122,28 @@ class Adjudicator:
         from google.genai import types
 
         prompt = f'A: "{a_label}"\nB: "{b_label}"'
-        try:
-            resp = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM,
-                    response_mime_type="application/json",
-                    response_schema=SCHEMA,
-                    temperature=0.0,
-                ),
-            )
-            data = json.loads(resp.text or "{}")
-        except Exception:  # noqa: BLE001 - an unresolved alias is a valid outcome
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM,
+            response_mime_type="application/json",
+            response_schema=SCHEMA,
+            temperature=0.0,
+        )
+        # Walk the chain the way the extractor does: an unavailable model is a
+        # deployment fact, not an answer about these two labels.
+        data = None
+        for candidate in list(self._chain):
+            try:
+                resp = self.client.models.generate_content(
+                    model=candidate, contents=prompt, config=config)
+                data = json.loads(resp.text or "{}")
+                self.model = candidate
+                self.last_error = None
+                break
+            except Exception as exc:  # noqa: BLE001 - unresolved is a valid outcome
+                self.last_error = f"{candidate}: {type(exc).__name__}: {exc}"[:200]
+                if candidate in self._chain:
+                    self._chain.remove(candidate)
+        if data is None:
             return None
 
         self.calls += 1

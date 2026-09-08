@@ -22,6 +22,39 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+def ingest_summary(seconds: float, model_calls: int, cache_hits: int,
+                   documents: int, already_ingested: int) -> str:
+    """One line saying what the ingest actually did.
+
+    On a fresh clone every document is already in the committed store, so both
+    counters are zero and this printed "0 model calls, 0 cache hits". The
+    README has just promised that `--demo` replays a committed cache with zero
+    API calls, so the first output an evaluator sees appears to say the replay
+    never happened and the figures below it are canned. They are not; nothing
+    needed re-reading. Say that instead of printing two zeroes.
+    """
+    if already_ingested == documents and not model_calls and not cache_hits:
+        return (f"  ingest took {seconds:.1f}s — all {documents} documents were already "
+                f"in this store, so none needed re-reading. Their facts came from the "
+                f"committed extraction cache, with no model call then or now.")
+    return (f"  ingest took {seconds:.1f}s "
+            f"({model_calls} model calls, {cache_hits} cache hits)")
+
+
+def coverage_note(pages_extracted: int, pages_candidate: int) -> str:
+    """Why the page count is short, stated where the short count is printed.
+
+    "this run did not finish the corpus" named a fact and no cause, so the most
+    alarming line in the output read as a broken submission. The cause is not
+    knowable from here -- it may be quota, an interrupt, or a missing key -- so
+    name the possibilities and what the figures above it are over.
+    """
+    return (f"  read {pages_extracted} of {pages_candidate} candidate pages — the rest "
+            f"were never sent to a model (daily quota, an interrupted run, or no API "
+            f"key). Every figure above is over the pages that were read, not the "
+            f"whole corpus.")
+
+
 def _load_env(path: Path) -> None:
     """Read .env ourselves, tolerating the encodings Windows produces.
 
@@ -120,10 +153,12 @@ def main() -> int:
             print(f"! No PDFs found. Looked in {STARTER}")
         extractor = Extractor(store, offline=offline)
         t0 = time.time()
+        already = 0
         for pdf in pdfs:
             started = time.time()
             rep = ingest_document(store, pdf, extractor, workers=args.workers)
             if rep.already_ingested:
+                already += 1
                 print(f"  = {pdf.name[:52]:54s} already ingested ({rep.kept} facts)")
                 continue
             print(f"  + {pdf.name[:52]:54s} {rep.pages_scanned:3d}/{rep.pages_total:3d} pages · "
@@ -133,8 +168,8 @@ def main() -> int:
             if rep.errors:
                 print(f"      {len(rep.errors)} page errors, first: {rep.errors[0][:90]}")
 
-        print(f"\n  ingest took {time.time() - t0:.1f}s "
-              f"({extractor.calls} model calls, {extractor.cache_hits} cache hits)")
+        print("\n" + ingest_summary(time.time() - t0, extractor.calls,
+                                    extractor.cache_hits, len(pdfs), already))
 
         existing_rels = store.one("SELECT COUNT(*) c FROM relationships")["c"]
         if existing_rels and not args.rebuild:
@@ -167,8 +202,7 @@ def main() -> int:
         print(f"  hallucination rate {s['hallucination_rate'] * 100:.1f}% "
               f"(ungrounded claims / claims the model emitted)")
         if s["pages_extracted"] < s["pages_candidate"]:
-            print(f"  read {s['pages_extracted']} of {s['pages_candidate']} candidate pages "
-                  f"— this run did not finish the corpus")
+            print(coverage_note(s["pages_extracted"], s["pages_candidate"]))
 
     if args.no_serve:
         return 0

@@ -108,16 +108,24 @@ function pickHighlight(rels) {
 /* ------------------------------------------------------------- top of page */
 function renderCorpus() {
   const s = state.stats;
-  $("#corpus").innerHTML = "";
-  const bits = [
-    `${s.documents} document${s.documents === 1 ? "" : "s"}`,
-    `${s.pages_extracted}/${s.pages_total} pages read`,
-    `${s.facts_kept} facts`,
-    `${s.relationships} relationships`,
+  const box = $("#corpus");
+  box.innerHTML = "";
+  // Figure over label, rather than five counts run together in one line of
+  // 11px grey. These are the numbers a reader checks first.
+  const stats = [
+    [s.documents, s.documents === 1 ? "document" : "documents"],
+    [`${s.pages_extracted}/${s.pages_total}`, "pages read"],
+    [Number(s.facts_kept).toLocaleString(), "facts"],
+    [Number(s.relationships).toLocaleString(), "relationships"],
   ];
-  if (s.is_reference_set) bits.push("reference set");
-  else if (s.offline) bits.push("cached · no API calls");
-  bits.forEach((b) => $("#corpus").appendChild(el("span", null, b)));
+  stats.forEach(([value, label]) => {
+    const stat = el("div", "stat");
+    stat.append(el("span", "v", String(value)), el("span", "l", label));
+    box.appendChild(stat);
+  });
+  const mode = s.is_reference_set ? "reference set"
+    : s.offline ? "cached · no API calls" : "live extraction";
+  box.appendChild(el("div", "mode" + (s.is_reference_set ? " ref" : ""), mode));
 }
 
 function renderFilters() {
@@ -206,20 +214,21 @@ function renderRows() {
     const row = el("div", "row");
     row.setAttribute("aria-selected",
       state.selected && (state.selected.fact_a === f.fact_id || state.selected.fact_b === f.fact_id));
-    row.append(el("div", "n", String(i + 1)), el("div", "ent", f.entity_raw));
-    const m = el("div", "metric");
-    m.appendChild(el("span", null, f.metric_raw));
+    row.appendChild(el("div", "n", String(i + 1)));
+    const main = el("div", "main");
+    const l1 = el("div", "l1");
+    l1.append(el("span", "ent", f.entity_raw), el("span", "met", f.metric_raw));
     const b = badge(f);
-    if (b) m.appendChild(b);
-    row.appendChild(m);
+    if (b) l1.appendChild(b);
+    const l2 = el("div", "l2");
+    l2.append(el("span", "period", f.period_raw || "no period stated"),
+              el("span", "src", `${shortDoc(f.filename)} · p.${f.page_no}`));
+    main.append(l1, l2);
+    row.appendChild(main);
     const val = el("div", "value" + (f.value_raw ? "" : " text"),
       f.value_raw ? `${f.value_raw}${unitSuffix(f)}` : (f.value_text || "—"));
     if (!f.value_raw && f.value_text) val.title = f.value_text;
-    row.append(
-      val,
-      el("div", "period", f.period_raw || "—"),
-      el("div", "src", `${shortDoc(f.filename)}·p${f.page_no}`),
-    );
+    row.appendChild(val);
     row.onclick = () => selectFact(f);
     box.appendChild(row);
   });
@@ -287,17 +296,18 @@ function renderRejectRows(box) {
     try { p = JSON.parse(r.payload_json); } catch { /* keep going */ }
     const row = el("div", "row");
     row.setAttribute("aria-selected", state.selected?.reject_id === r.reject_id);
-    row.append(el("div", "n", String(i + 1)),
-               el("div", "ent", p.entity || "—"));
-    const m = el("div", "metric");
-    m.appendChild(el("span", null, p.metric || "—"));
-    m.appendChild(el("span", "tag reason", r.reason.replace(/_/g, " ")));
-    row.appendChild(m);
-    row.append(
-      el("div", "value" + (p.value ? "" : " text"), p.value || p.value_text || "—"),
-      el("div", "period", p.period || "—"),
-      el("div", "src", `${shortDoc(r.filename)}·p${r.page_no}`),
-    );
+    row.appendChild(el("div", "n", String(i + 1)));
+    const main = el("div", "main");
+    const l1 = el("div", "l1");
+    l1.append(el("span", "ent", p.entity || "—"), el("span", "met", p.metric || "—"),
+              el("span", "tag reason", r.reason.replace(/_/g, " ")));
+    const l2 = el("div", "l2");
+    l2.append(el("span", "period", p.period || "no period stated"),
+              el("span", "src", `${shortDoc(r.filename)} · p.${r.page_no}`));
+    main.append(l1, l2);
+    row.appendChild(main);
+    row.appendChild(el("div", "value" + (p.value ? "" : " text"),
+                       p.value || p.value_text || "—"));
     row.onclick = () => selectReject(r);
     box.appendChild(row);
   });
@@ -365,8 +375,12 @@ const unitSuffix = (f) => {
   if (/^%|per\s*cent|percent/i.test(u)) return "%";
   return " " + u.replace(/^(rs\.?|inr|₹)\s*/i, "").trim();
 };
+// Enough of the filename to tell the six documents apart. Two segments capped
+// at 14 characters rendered "delhivery-pros" for both the prospectus and the
+// annual report, so the provenance line named a document nobody could identify.
 const shortDoc = (n) => String(n || "").replace(/\.pdf$/i, "")
-  .replace(/^\d+-/, "").split("-").slice(0, 2).join("-").slice(0, 14);
+  .replace(/^\d+-/, "").replace(/-excerpt$/, "")
+  .split("-").slice(0, 3).join("-").slice(0, 28);
 
 /* --------------------------------------------------------------- selection */
 function selectFact(f) {
@@ -534,8 +548,14 @@ async function renderEvidence(sides, label, caption) {
     line of the located quote, scaled from PDF points to rendered pixels. */
 async function togglePage(card, docId, page, bboxJson) {
   const existing = card.querySelector(".page-wrap");
-  if (existing) { existing.remove(); return; }
+  if (existing) { existing.remove(); card.classList.remove("open"); return; }
   if (!docId) return toast("Source PDF path not recorded for this document.");
+
+  // Widen the card to the full pane BEFORE the image loads: side by side each
+  // page renders about 370px across, which is too small to read the sentence
+  // the highlight is pointing at, and the scale factor below is measured from
+  // the laid-out width so it has to be settled first.
+  card.classList.add("open");
 
   const wrap = el("div", "page-wrap");
   const img = new Image();

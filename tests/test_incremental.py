@@ -79,3 +79,75 @@ def test_pair_generation_is_order_independent():
     a = _pairset(blocking.candidate_pairs(ALL))
     b = _pairset(blocking.candidate_pairs(list(reversed(ALL))))
     assert a == b
+
+
+def test_a_more_specific_label_is_still_asked_about():
+    """One document writes "revenue", another "revenue from operations". Their
+    token overlap is 0.333 against a 0.34 floor, so the pair was never proposed
+    and the adjudicator never saw it -- losing a cross-magnitude corroboration
+    and a period reconciliation to seven thousandths.
+
+    Lowering the floor is the wrong repair: at 0.33 the starter corpus gains 714
+    pairs, mostly "gfce growth" against "real growth" -- different metrics
+    sharing one common word. Containment is the sharper signal, and it adds 303.
+    """
+    from tieout.reason.blocking import near_miss
+
+    # one label is a more specific form of the other -> a real question
+    for a, b in (("revenue", "revenue_from_operations"),
+                 ("income", "other_comprehensive_income"),
+                 ("expenses", "employee_benefits_expenses"),
+                 ("cad", "cad_as_percentage")):
+        assert near_miss(a, b), f"{a!r} ~ {b!r} should be asked about"
+        assert near_miss(b, a), "the test must be symmetric"
+
+    # merely sharing a common word is not a question worth spending a call on
+    for a, b in (("gfce_growth", "real_growth"),
+                 ("nominal_growth", "real_growth"),
+                 ("adjusted_ebitda", "ebitda_margin"),
+                 ("revenue_from_services", "revenue_from_contract_with_customers")):
+        assert not near_miss(a, b), f"{a!r} ~ {b!r} should NOT be proposed"
+
+    # unrelated keys stay unrelated, and identical keys are handled before this
+    assert not near_miss("count_employees", "headcount")
+    assert not near_miss("", "revenue")
+
+
+def test_the_adjudicator_uses_a_model_that_exists_and_falls_through():
+    """The adjudicator defaulted to a hard-coded "gemini-2.5-flash", which
+    returns 404 NOT_FOUND on a key issued after that alias was retired. The
+    bare `except` then turned the 404 into "unresolved", so the component never
+    ran, `metric_aliases` stayed empty, and /api/stats reported "relationships
+    decided by a model: 0" -- which reads like the rules settled everything
+    rather than like a dead dependency.
+    """
+    from tieout.ingest.extract import MODEL_CHAIN
+    from tieout.reason.adjudicate import Adjudicator
+
+    class Store:
+        def q(self, *a, **k):
+            return []
+        def insert(self, *a, **k):
+            pass
+
+    adj = Adjudicator(Store(), api_key="test-key")
+    assert adj.model == MODEL_CHAIN[0], f"default is {adj.model!r}, not the chain head"
+    assert adj.model != "gemini-2.5-flash", "back on the retired alias"
+    assert len(adj._chain) > 1, "no fallback if the head model is unavailable"
+
+    # A dead head model must not be mistaken for an answer: it falls through.
+    tried = []
+
+    class Models:
+        def generate_content(self, model, **kw):
+            tried.append(model)
+            if model != MODEL_CHAIN[-1]:
+                raise RuntimeError("404 NOT_FOUND")
+            return type("R", (), {"text": '{"same": true, "confidence": 0.9,'
+                                          ' "rationale": "same quantity"}'})()
+
+    adj._client = type("C", (), {"models": Models()})()
+    assert adj.resolve("revenue", "revenue", "revenue_from_operations",
+                       "revenue from operations") is True
+    assert len(tried) > 1, f"did not fall through the chain: {tried}"
+    assert adj.calls == 1

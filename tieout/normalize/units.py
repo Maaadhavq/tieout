@@ -52,6 +52,10 @@ class Quantity:
 
 _NUM = re.compile(r"[-+]?\(?\d[\d,\s]*(?:\.\d+)?\)?")
 
+# "... per one million-person hours": the scale word belongs to the rate's
+# denominator. Matched against the text immediately before a magnitude word.
+_PER_TAIL = re.compile(r"\bper\s+(?:one\s+|a\s+)?$")
+
 # Words that describe scale or shape rather than the quantity itself; they must
 # not become the unit.
 _NOT_A_UNIT = set(MAGNITUDES) | {
@@ -108,10 +112,29 @@ def _decimals(numeric_token: str) -> int:
     return len(t.split(".")[1]) if "." in t else 0
 
 
+def _is_magnitude_only(unit_raw: str | None) -> bool:
+    """Did the extractor put nothing but a scale word in the unit field?
+
+    "Rs. 1,000 crore" often comes back as value="1,000", unit="crore": the
+    currency is in the sentence but not in any field, so the figure normalized
+    to a unitless count and would not compare against the same amount written
+    "Rs. 10,000 million". This is the one case where reading the quoted sentence
+    for a currency is safe -- the model has told us the unit is a scale word, so
+    whatever currency the sentence carries belongs to this number.
+    """
+    words = re.findall(r"[A-Za-z]+", str(unit_raw or "").lower())
+    return bool(words) and all(w in _NOT_A_UNIT for w in words)
+
+
 def parse_quantity(value_raw: str | None, unit_raw: str | None = None,
-                   magnitude_raw: str | None = None) -> Quantity | None:
+                   magnitude_raw: str | None = None,
+                   context: str | None = None) -> Quantity | None:
     """Parse a written figure. `unit_raw`/`magnitude_raw` are hints from the
-    extractor; anything found inside `value_raw` itself wins over them."""
+    extractor; anything found inside `value_raw` itself wins over them.
+
+    `context` is the verbatim quote the fact came from. It is consulted for one
+    thing only -- a currency the extractor dropped -- and only when the unit
+    field holds nothing but a scale word."""
     if value_raw is None:
         return None
     raw = str(value_raw).strip()
@@ -152,13 +175,29 @@ def parse_quantity(value_raw: str | None, unit_raw: str | None = None,
             # into a false contradiction on any document that is not financial.
             # No conversion is attempted: there is no factor in evidence, which
             # is the same reason currencies are never converted.
-            unit = _unit_token(unit_raw, magnitude_raw, raw) or "count"
+            token = _unit_token(unit_raw, magnitude_raw, raw)
+            if token is None and context and _is_magnitude_only(unit_raw):
+                for cur, canon in sorted(CURRENCY.items(), key=lambda kv: -len(kv[0])):
+                    pat = re.escape(cur) if not cur[0].isalpha() else rf"\b{re.escape(cur)}\b"
+                    if re.search(pat, str(context).lower()):
+                        token = canon
+                        break
+            unit = token or "count"
 
     # magnitude
     mag_word, mag_mult = None, 1.0
     for word, mult in sorted(MAGNITUDES.items(), key=lambda kv: -len(kv[0])):
-        if re.search(rf"\b{re.escape(word)}\b", blob):
+        for m in re.finditer(rf"\b{re.escape(word)}\b", blob):
+            # A magnitude after "per" scales the DENOMINATOR of a rate, not the
+            # value. "0.56 per one million-person hours worked" is an injury
+            # frequency of 0.56, not 560,000 of anything -- the rate is already
+            # expressed per million hours, so multiplying by a million states
+            # it in units nobody wrote.
+            if _PER_TAIL.search(blob[:m.start()]):
+                continue
             mag_word, mag_mult = word, mult
+            break
+        if mag_word:
             break
     if unit == "percent":
         mag_word, mag_mult = None, 1.0  # "6.5 per cent" is never 6.5 million percent

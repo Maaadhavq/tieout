@@ -33,9 +33,23 @@ git clone https://github.com/Maaadhavq/tieout && cd tieout
 python -m pip install -r requirements.txt
 ```
 
-There are two corpora, and the UI always says which one is on screen.
+**Start here — all four required cases, proved in under a second, no API key:**
 
-**Reproduce the four required cases with no API key:**
+```bash
+python -m tieout.verify
+```
+
+Prints each case with both facts, the full comparability trace, both verbatim
+quotes with document and page, the confidence and the explanation. Exits
+non-zero if a case is missing. The cases are found by *query*, not by
+hard-coded row ids, so it works on any corpus — including one you ingest
+yourself. If you read nothing else here, read that output.
+
+The rest of this section is how to see the same thing in the viewer, and how to
+run it on your own PDFs. There are two corpora, and the UI always says which one
+is on screen.
+
+**See those same four cases in the viewer, no API key:**
 
 ```bash
 python run.py --gold
@@ -64,18 +78,6 @@ python run.py               # ingests data/starter-datasets/, then serves
 python run.py --paths some/other.pdf
 ```
 
-**Confirm the four required cases in fifteen seconds, no API key:**
-
-```bash
-python -m tieout.verify
-```
-
-Prints each case with both facts, the full comparability trace, both verbatim
-quotes with document and page, the confidence and the explanation. Exits
-non-zero if a case is missing. The cases are found by *query*, not by
-hard-coded row ids, so it works on any corpus — including one you ingest
-yourself.
-
 **Export the ledger to a spreadsheet:**
 
 ```bash
@@ -96,7 +98,7 @@ follows whatever filter is active.
 **Tests and evaluation:**
 
 ```bash
-python -m pytest -q                  # 133 tests, no API key needed
+python -m pytest -q                  # 145 tests, no API key needed
 python -m tieout.eval --db data/demo.db
 ```
 
@@ -265,7 +267,7 @@ Four classes, all visible in the tooling rather than described:
   them would compare every filing's "company" facts against every other's, so
   they are refused. Resolving them to the document's subject is the first thing
   I would build next.
-- **Tables lose their row headers — 17 of the 22 contradictions.** They are
+- **Tables lose their row headers — 14 of the 19 contradictions.** They are
   same-page pairs from the Delhivery filings like "Borrowings 1,316.09 vs
   1,697.34, same date, same page" — current versus non-current, with the
   qualifier lost because reading order flattens a table into a stream. Because
@@ -286,7 +288,7 @@ Four classes, all visible in the tooling rather than described:
   and corroborates p.13 at 93%. This is the honest limit of what a
   quote-presence gate can catch.
 
-That accounts for 21. The 22nd is the real one: the cross-document disagreement
+That accounts for 18. The 19th is the real one: the cross-document disagreement
 in case 2 above.
 
 A page with no text layer (IMF Article IV p.1, a scanned cover) yields nothing
@@ -313,9 +315,9 @@ them. They are GDP and GVA, and the comparator suppresses the pair
 | **hallucination rate** | **3.7%** — ungrounded claims / claims emitted |
 | quote match quality | 1,712 exact, 12 fuzzy, 2 normalized (99.2% exact) |
 | distinct metrics discovered | 961, none of them hard-coded |
-| pairs compared | 2,325, against 1,488,675 if compared naively (0.16%) |
-| relationships | 30 corroborates · 22 contradicts · 174 reconciled · 379 insufficient |
-| suppressed | 387 same-document time series, 1,237 unresolved alias questions |
+| pairs compared | 2,628, against 1,488,675 if compared naively (0.18%) |
+| relationships | 30 corroborates · 19 contradicts · 177 reconciled · 379 insufficient |
+| suppressed | 384 same-document time series, 1,540 unresolved alias questions |
 | relationship accuracy | 7/7 labelled pairs, 2/2 negative controls |
 
 ### What it costs to run
@@ -331,7 +333,7 @@ them. They are GDP and GVA, and the comparator suppresses the pair
 | ingest, live, per page | ~2 s, 6 pages in parallel |
 | re-ingesting a document already seen | free — content-hash dedup, no model call |
 
-Comparison is the part that could have been expensive and is not: 2,325 pairs
+Comparison is the part that could have been expensive and is not: 2,628 pairs
 were considered against 1,488,675 if every fact were compared with every other,
 because blocking only ever pairs facts sharing an entity and a metric. The model
 is never asked to compare anything.
@@ -347,7 +349,7 @@ reported separately in `/api/stats` for exactly this reason.
 - **First-person entities are dropped, not resolved.** 163 well-grounded facts
   lost because the document said "our Company". This is the largest single
   source of lost recall and the first thing to fix.
-- **Tables lose their row headers**, which is where 17 of the 22 contradictions
+- **Tables lose their row headers**, which is where 14 of the 19 contradictions
   come from. Geometry-aware reconstruction using the word boxes already
   extracted for the highlights is the fix.
 - **The grounding gate checks the quote, not the binding.** A sentence carrying
@@ -365,13 +367,27 @@ reported separately in `/api/stats` for exactly this reason.
   That is honest, and it is most of that bucket: 338 of the 379 insufficient
   pairs fail on `period`, and 352 of them have no period on at least one side.
 - **Entity resolution is deliberately shallow** — exact match, or one name
-  contained in the other. It will not merge "Reserve Bank of India" with "RBI"
-  unless a document writes them together. A wrong merge corrupts every
-  comparison downstream, so this errs conservative.
+  extending another from the front ("Acme" / "Acme Logistics"). It will not
+  merge "Reserve Bank of India" with "RBI" unless a document writes them
+  together. A wrong merge corrupts every comparison downstream, so this errs
+  conservative. Blocking is stricter still: it keys on the exact entity key, so
+  even a permitted fold never generates a cross-entity comparison today.
 - **No unit conversion of any kind.** Rupees against dollars, TWh against GWh,
   tonnes against kilograms — all reported incomparable rather than converted,
   because no conversion factor is ever in evidence. Spelling variants of one
   unit (`mm` / `millimetres`) are folded; different units never are.
+- **The unit a model returns is not stable, and the comparator is strict about
+  it.** The same sentence — "The Company employed 1,200 people as at March 31,
+  2024" — came back as `unit: null` from one document and `unit: "people"` from
+  another, normalizing to `count` and `person`. Two identical facts then read as
+  `INSUFFICIENT_EVIDENCE` on a unit mismatch instead of corroborating. Treating
+  an absent unit as compatible with any stated one would make TWh and GWh
+  compare as equal, which is a worse failure, so this errs toward silence.
+- **Metric labels that share no word are never compared.** "headcount" in one
+  document and "number of employees" in another have zero token overlap, so no
+  pair is proposed and the adjudicator never sees them — a genuine
+  cross-document contradiction is missed. Containment catches "revenue" against
+  "revenue from operations" (D27); synonyms need a signal this does not have.
 - **Confidence is composed, not calibrated.** A defensible product of grounding
   quality, frame completeness and period certainty — but not fitted against
   outcomes, because there are not enough labelled pairs to do that honestly.

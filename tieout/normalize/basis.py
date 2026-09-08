@@ -79,7 +79,14 @@ def normalize_basis(raw: dict | None, context: str = "") -> tuple[dict, dict]:
 
     blob = _sep(" ".join([str(v) for v in raw.values()] + [str(context or "")]))
 
-    for dim, rules in _VOCAB.items():
+    # Walk DIMENSIONS, not _VOCAB. Not every dimension can have a vocabulary:
+    # `geography` is open-ended -- a region, a population, a venue -- so there
+    # is nothing to enumerate. Walking _VOCAB skipped it entirely, and the
+    # leftover pass below skips anything already in DIMENSIONS, so a stated
+    # geography fell between the two and was silently dropped. A dimension with
+    # no rules now still reaches the verbatim fallback further down.
+    for dim in DIMENSIONS:
+        rules = _VOCAB.get(dim, [])
         explicit = raw.get(dim)
         if explicit:
             text = _sep(str(explicit))
@@ -156,12 +163,29 @@ def infer_from_label(label: str | None) -> dict:
     return out
 
 
+# Dimensions the extractor fills opportunistically rather than systematically.
+# `geography` is open-ended and has no vocabulary, so it is the slot a model
+# reaches for whenever a figure carries any extra qualifier at all -- it arrives
+# on roughly 5% of facts, and on one side of a pair far more often than on both.
+# A value present on one side therefore says nothing about the other document,
+# and counting it as `unknown` suppresses findings: it demoted a real
+# cross-document contradiction to INSUFFICIENT_EVIDENCE purely because one
+# publisher restated the country the other left implicit.
+#
+# Ignoring a one-sided value is exactly the behaviour before this dimension was
+# read at all, so nothing regresses; what is new is that when BOTH sides state
+# it, the difference is now visible instead of discarded.
+OPTIONAL = {"geography"}
+
+
 def compare_basis(a: dict, b: dict) -> tuple[list[str], list[str]]:
     """Returns (dimensions that differ, dimensions only one side states).
 
     A dimension only one side states is *unknown*, not different -- that
     distinction is what separates CONTEXTUALLY_RECONCILED (we know why they
-    differ) from INSUFFICIENT_EVIDENCE (we do not).
+    differ) from INSUFFICIENT_EVIDENCE (we do not). Dimensions in OPTIONAL are
+    exempt: stated by one side alone they are carried as context, not treated
+    as a gap in the evidence.
     """
     differs, unknown = [], []
     for dim in DIMENSIONS:
@@ -169,7 +193,7 @@ def compare_basis(a: dict, b: dict) -> tuple[list[str], list[str]]:
         if va and vb:
             if va != vb:
                 differs.append(dim)
-        elif va or vb:
+        elif (va or vb) and dim not in OPTIONAL:
             unknown.append(dim)
     return differs, unknown
 

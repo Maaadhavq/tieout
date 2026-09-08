@@ -10,7 +10,25 @@ import pytest
 import yaml
 
 from tieout.ingest.ground import locate
-from tieout.ingest.pdf import read_pages
+from tieout.ingest.pdf import Page, Word, read_pages
+
+
+def _page(text: str) -> Page:
+    """A synthetic page: one Word per token, carrying its true char offsets.
+
+    Used for the offset-arithmetic tests below, where the point is the mapping
+    from folded text back to raw characters and a real PDF would only make the
+    failure harder to read.
+    """
+    words, cursor = [], 0
+    for token in text.split(" "):
+        if not token:
+            continue
+        start = text.index(token, cursor)
+        words.append(Word(token, float(len(words) * 10), 0.0,
+                          float(len(words) * 10 + 8), 10.0, start, start + len(token)))
+        cursor = start + len(token)
+    return Page(1, "1", text, words, 600.0, 800.0)
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "starter-datasets"
 GOLD = yaml.safe_load((Path(__file__).parent / "golden" / "cases.yaml").read_text(encoding="utf-8"))
@@ -71,3 +89,31 @@ def test_image_only_page_grounds_nothing():
     page = pages_for("india-macroeconomy/03-imf-india-2025-article-iv-excerpt.pdf")[0]
     assert page.text.strip() == ""
     assert not locate(page, "India 2025 Article IV Consultation").ok
+
+
+def test_a_length_changing_fold_does_not_shift_the_located_span():
+    """The normalized rung folded the page with `normalize_ws` but built its
+    offset map with a whitespace-only walk. Two of the folds change length -- a
+    ligature expands to two letters, a soft hyphen vanishes -- so any of them
+    earlier on the page pushed every later offset out.
+
+    A single "fi" before the match returned the span one character late
+    ("evenue rose..."), two returned it two late, and a soft hyphen returned it
+    one early. The span is what the highlight boxes are computed from, so the
+    box on the page image pointed at the wrong characters.
+    """
+    tail = "Revenue rose 5–6 per cent in 2024."   # en dash on the page
+    quote = "Revenue rose 5-6 per cent in 2024."      # plain hyphen in the quote
+
+    for lead in ("The plain section. ",
+                 "The ﬁrst section. ",
+                 "The ﬁrst ﬂow section. ",
+                 "The sec­tion here. "):
+        page = _page(lead + tail)
+        g = locate(page, quote)
+        assert g.match_type == "normalized", f"{lead!r} -> {g.match_type}"
+        assert page.text[g.char_start:g.char_end] == tail, \
+            f"span shifted for {lead!r}: {page.text[g.char_start:g.char_end]!r}"
+        # and the boxes follow the span, so they must not reach back into the lead
+        assert g.bboxes, "no highlight boxes for a located span"
+        assert min(b[0] for b in g.bboxes) >= 0

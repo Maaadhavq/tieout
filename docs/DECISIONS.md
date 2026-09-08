@@ -455,3 +455,282 @@ Hague" still resolves, because "hague" is not generic.
 
 **Cost:** an entity genuinely named "Our House" would be refused. Erring toward
 refusal is the standing policy here, and the reason is in D11.
+
+---
+
+## D22 — Name containment is tested on word order, not on token sets
+**2026-09-08**
+
+`same_entity` folded one name into another when either token *set* contained
+the other. Sets discard word order, and word order is exactly what separates
+two institutions whose names share a head noun: "<Place> Bank of <Country>" and
+"Bank of <Country>" are different banks, "<Place> National Bank" and "National
+Bank" are different banks, and — the case that made the decision — a country
+resolved as the same entity as its own central bank.
+
+Containment is now a prefix test on the token sequence. English organisation
+names put the distinguishing element first and append qualifiers, so dropping
+trailing words preserves identity while dropping leading ones destroys it.
+
+This was proved by calling `same_entity` directly, not by observing a bad
+relationship: blocking keys on the exact `entity_key`, so no cross-entity pair
+is ever generated and nothing in the pipeline could reach the branch. Auditing
+recall is what turned it up — the 84 fact pairs blocking "misses" here are
+overwhelmingly pairs that must not be compared, so the exact-key discipline is
+load-bearing rather than merely conservative.
+
+**Cost:** an abbreviation that drops leading words rather than trailing ones is
+no longer folded, and a genuine parent/subsidiary pair that differs only by a
+trailing word ("Acme" / "Acme Singapore") still folds even though they are
+distinct legal entities. Both are unreachable today; if blocking is ever
+widened to use this rule, the second is the one to fix first.
+
+**Not done:** removing containment altogether. It is documented behaviour, and
+the abbreviation case it exists for is real.
+
+---
+
+## D23 — A stated geography is kept, but only compared when both sides state it
+**2026-09-08**
+
+The extraction prompt asks for `geography` and the response schema declares it.
+`normalize_basis` built its `known` map by walking `_VOCAB`, which has no entry
+for geography because the dimension is open-ended and has nothing to enumerate;
+the leftover pass skips anything already in `DIMENSIONS`. A stated geography
+fell between the two and was discarded. The committed cache shows the model
+returned one on **99 facts** and not one reached the store.
+
+It is read now — `normalize_basis` walks `DIMENSIONS` and a dimension with no
+rules reaches the existing verbatim fallback.
+
+Reading it naively made things worse, which is the part worth recording. It
+arrives on ~5% of facts and usually on one side of a pair, frequently just
+restating the entity (34 of 96 were the entity's own name). Counted as a
+dimension "one side states", it demoted the **required cross-document
+contradiction** — Economic Survey p.20 6.7% against RBI p.24 6.5% — from
+`CONTRADICTS` 0.93 to `INSUFFICIENT_EVIDENCE` 0.60, because the RBI page named
+the country and the Survey page did not. Worse, `verify` still exited 0: it
+finds cases by query, so it silently promoted the IMF p.3/p.13 value-binding
+pair — the one relationship documented as confidently wrong — into the slot.
+
+So geography is in `OPTIONAL`: stated by one side alone it is carried as
+context and ignored for comparability, which is exactly the behaviour before
+the dimension was read at all; stated by both, it is compared. Nothing
+regresses and the gain is real.
+
+**What it bought:** three ESG rows stop being contradictions. Lost Time Injury
+Frequency Rate 0.56 against 1.21 and 0.75 against 2.46, and fatalities 7 against
+19 — the model had correctly labelled these `Employees` and `Workers`, two
+separate populations in one table, and the pipeline was throwing that label away
+and calling them contradictions. Contradictions fall 22 → 19, reconciliations
+rise 174 → 177. Time-series suppressions fall 387 → 384 because those same rows
+across two periods now differ on two dimensions and are UNRELATED rather than
+one series; both are suppressed, so the total is unchanged.
+
+**Cost:** a genuine geography difference where only one document states it is
+still missed — a state figure compared against a national one, with the state
+named on one side only, still reads as a contradiction. Fixing that needs the
+entity to carry its own scope, not a basis dimension.
+
+**Not done:** treating the other five dimensions the same way. Vintage,
+consolidation and price basis are stated systematically when they apply, and a
+one-sided value there is real evidence of a gap — that asymmetry is what makes
+case 3 work.
+
+---
+
+## D24 — The first screen of output is part of the submission
+**2026-09-08**
+
+Read cold, following the README literally from a fresh clone, two lines said
+something the project did not mean.
+
+`python run.py --demo` printed `ingest took 0.0s (0 model calls, 0 cache hits)`
+immediately below a README promising that this command replays a committed
+extraction cache with zero API calls. Both counters are zero on a fresh clone
+because every document is already in the committed store and nothing needs
+re-reading — but printed as two zeroes under that promise, it reads as though
+the replay never happened and the figures beneath it are canned. It now says
+what actually occurred.
+
+`read 284 of 487 candidate pages — this run did not finish the corpus` named a
+fact and no cause, so the most alarming line in the output read as a broken
+submission rather than a documented limit. The cause is not knowable from
+inside `run.py` — quota, an interrupt, or a missing key — so it names the
+possibilities and says what the figures above it are computed over.
+
+Both messages moved into `ingest_summary` and `coverage_note`, small pure
+functions, so they can be asserted on rather than reviewed by eye.
+
+`python -m tieout.verify` reproduces all four required cases in under a second
+with no API key, and it sat ~70 lines into the README, below two corpora
+explanations and the live-extraction path. It now leads the section. For a
+reader with several hundred submissions to get through, the fastest proof in
+the repository should not be the fifth thing they meet.
+
+**Cost:** the README's opening is one section longer before a reader reaches
+the viewer. That is the right trade: the viewer is what makes the case
+memorable, but `verify` is what makes it credible, and credibility has to land
+first.
+
+**Not done:** anything else the cold read turned up was presentation, not
+comprehension, and was left alone.
+
+---
+
+## D25 — A magnitude inside a rate's denominator does not scale the value
+**2026-09-08**
+
+`parse_quantity` searched the whole blob -- value, unit and magnitude hints
+together -- for a scale word. The annual report states its safety metrics as
+"Lost Time Injury Frequency Rate (LTIFR) (per one million-person hours worked)
+Employees 0.56", and "million" inside that denominator was applied to the
+value: four facts stored an injury frequency of 0.56 as **560,000**, and the
+explanation rendered it as "0.56 million".
+
+The model was right and we were wrong -- it returned `magnitude: null` for
+every one of them. A magnitude word immediately preceded by "per" (optionally
+"per one" / "per a") is now skipped, because it scales what the rate is
+measured against rather than the quantity itself. A magnitude before "per"
+still applies: "crore per annum" is a crore, annually.
+
+**Cost:** "revenue per employee, in millions" loses its magnitude, because the
+scale word trails the "per". That form is rarer than "per million X", and
+dropping a magnitude understates a figure rather than inflating it by a
+million, which is the safer direction to be wrong in.
+
+Four values corrected. No label moved -- both sides of each comparison were
+scaled identically, so the pairs agreed on a wrong number before and agree on
+the right one now -- and no published figure changed.
+
+---
+
+## D26 — The junk filter's unit test is accidentally permissive, and stays that way
+**2026-09-08**
+
+`UNIT` in the prefilter matches `rs\.?` with no word boundary, so the "rs" in
+"FACTORS", "quarters" and "figures" satisfies it. On 70 of 511 pages the unit
+check passes only on a fragment of an ordinary English word, which makes the
+"numbers present but no unit or period to anchor them" rejection nearly dead:
+it fires on exactly one page in the starter set.
+
+Measured before deciding. Anchoring the alternatives with `\b` would drop 8
+more pages from the candidate set -- and those 8 pages hold **8 grounded facts**
+that are in the corpus today. The module's own docstring says recall matters
+more than precision here and the bar is deliberately low; tightening it would
+trade 8 real facts for 8 model calls.
+
+So it is left alone, and written down instead, because the next person to read
+that regex will see the missing boundary and "fix" it. `pages_candidate` (487)
+is therefore slightly generous, and the README's 284-of-487 is over that
+generous denominator.
+
+**Not done:** anchoring the regex; changing MIN_CHARS or MIN_NUMBERS. Neither
+was measured to help.
+
+---
+
+## D27 — A near miss is containment, not a Jaccard floor
+**2026-09-08**
+
+Acceptance testing on documents the system had never seen found the failure the
+assignment is actually about. One document wrote "revenue", another "revenue
+from operations". Their token overlap is **0.333** against a `NEAR_MISS_MIN` of
+**0.34**, so the pair was never proposed, the adjudicator never saw it, and both
+a cross-magnitude corroboration (Rs. 10,000 million against Rs. 1,000 crore) and
+a period reconciliation (FY2024 against FY2025) were lost to seven thousandths.
+
+Lowering the floor was the obvious repair and the wrong one. Measured on the
+starter corpus: 0.34 → 0.33 adds **714** pairs, and they are `gfce_growth`
+against `real_growth`, `nominal_growth` against `real_growth`, `adjusted_ebitda`
+against `ebitda_margin` — different metrics that share one common word. Those
+would spend a capped 40-call adjudication budget on questions with an obvious
+answer, which is the failure mode the build loop already warns about.
+
+Containment is the sharper signal, and it is the same distinction that separates
+two institutions sharing a head noun (D22). When one key's tokens are a subset
+of the other's, one label is a more specific form of the other and the pair is a
+real question. When they merely intersect, it usually is not.
+
+**Cost:** +303 pairs rather than +714, all of the shape "income ~ other
+comprehensive income" or "expenses ~ employee benefits expenses". Unresolved
+alias questions rise 1,237 → 1,540 and pairs compared 2,325 → 2,628 (0.16% →
+0.18% of naive). No relationship label moved: 30 corroborates, 19 contradicts,
+177 reconciled, 379 insufficient, all unchanged, because every added pair is one
+the rules refuse to settle alone.
+
+**Still not fixed:** "headcount" against "number of employees" share no token at
+all, so nothing proposes them and a genuine cross-document contradiction is
+still missed. Catching that needs a synonym signal this system does not have.
+
+---
+
+## D28 — A currency the extractor dropped is read back from the quote
+**2026-09-08**
+
+"Rs. 1,000 crore" comes back as `value="1,000"`, `unit="crore"`: the scale word
+lands in the unit field and the currency stays in the sentence. The figure then
+normalized to a unitless `count`, so it would not compare against the same
+amount written "Rs. 10,000 million" — exactly the cross-magnitude match this
+system exists to make, failing on an unseen document while working on the
+starter set, because there both sides happened to carry the currency.
+
+The quoted sentence is now consulted for a currency, but only when the unit
+field holds **nothing but a scale word**. That is the one case where it is safe:
+the model has said the unit is a magnitude, so whatever currency the sentence
+carries belongs to this number. A stated unit still wins, and a figure with no
+unit at all is never given a currency from its sentence — otherwise a headcount
+quoted beside a revenue figure would become rupees.
+
+**Cost:** 20 facts in the starter corpus gained a currency they should always
+have had. No published figure moved.
+
+**Known and not fixed:** the unit a model returns for one sentence is not
+stable. The same sentence, "The Company employed 1,200 people as at March 31,
+2024", came back with `unit=null` in one document and `unit="people"` in
+another, normalizing to `count` and `person`. The comparator then refuses the
+pair as an unit mismatch, and two identical facts read as
+`INSUFFICIENT_EVIDENCE` rather than corroborating. Making `count` compatible
+with any unit would reopen D20 — TWh against GWh comparing as equal — so this
+errs toward silence instead, and is recorded in the README's limitations.
+
+---
+
+## D29 — The adjudicator was calling a model that no longer exists
+**2026-09-08**
+
+The one place a model is asked to judge anything — "do these two metric labels
+name the same quantity?" — defaulted to a hard-coded `gemini-2.5-flash`. That
+alias returns **404 NOT_FOUND** on a key issued after it was retired, verified
+directly against the key in `.env`:
+
+    gemini-2.5-flash           FAIL-> ClientError: 404 NOT_FOUND
+    gemini-flash-lite-latest   OK
+
+`resolve()` wrapped the call in a bare `except` and returned `None`, which is
+the same value it returns when it is deliberately offline or over budget. So
+every adjudication failed, every failure was indistinguishable from a
+legitimate "unresolved", `metric_aliases` stayed empty across the whole
+project's life, and `/api/stats` reported "relationships decided by a model: 0"
+— which reads like the rules settled everything rather than like a dead
+dependency. The extractor already had a fallback chain; the adjudicator did not
+share it.
+
+It now walks the extractor's `MODEL_CHAIN`, drops a model that is unavailable
+rather than treating a deployment fact as an answer about two labels, and keeps
+the last error on the instance instead of discarding it.
+
+**Proof it now runs.** Two unseen PDFs, live: `metric_aliases` gains real rows
+with rationales, including the pair that motivated D27 —
+
+    revenue ~ revenue_from_operations   same=False
+      "Revenue from operations represents only the operating segment, whereas
+       total revenue often includes ..."
+
+Worth being straight about the outcome: the adjudicator judged those two labels
+NOT the same, so the corroboration I expected still does not fire. That is a
+defensible accounting answer, and the point is that the question is now asked
+and the answer recorded, rather than the pair vanishing in silence.
+
+**Cost:** none offline — with no key the adjudicator is still skipped and the
+committed corpus is unchanged. With a key, up to 40 calls as documented.

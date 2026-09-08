@@ -6,6 +6,7 @@ the UI is reachable as JSON, so the system can be inspected with curl alone.
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import os
@@ -13,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..ingest.extract import Extractor
@@ -405,9 +406,33 @@ def page_png(doc_id: str, page_no: int):
                              "X-Render-Scale": str(RENDER_DPI / 72.0)})
 
 
+def asset_stamp() -> str:
+    """A token that changes whenever the stylesheet or the script does.
+
+    Browsers cache /static/app.js hard enough that an edit to the frontend is
+    invisible on reload -- you end up debugging code that is no longer on disk.
+    Stamping the URLs with the assets' own mtimes makes a changed file a
+    changed URL, so the cache is correct instead of merely being fought.
+
+    Derived from BOTH files rather than the newer of the two: taking the max
+    meant editing whichever file happened to be older left the stamp untouched,
+    which is the same stale asset with extra steps.
+    """
+    parts = []
+    for name in ("app.js", "styles.css"):
+        try:
+            st = (WEB / name).stat()
+            parts.append(f"{name}:{st.st_mtime_ns}:{st.st_size}")
+        except OSError:
+            parts.append(f"{name}:absent")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:12]
+
+
 @app.get("/")
 def index():
-    return FileResponse(WEB / "index.html")
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html.replace("/static/app.js", f"/static/app.js?v={asset_stamp()}")
+                            .replace("/static/styles.css", f"/static/styles.css?v={asset_stamp()}"))
 
 
 if WEB.exists():

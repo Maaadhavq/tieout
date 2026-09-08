@@ -92,7 +92,18 @@ def same_entity(a: str, b: str) -> tuple[bool, str]:
         return False, "missing entity"
     if a == b:
         return True, f"{a} ≡ {b}"
-    ta, tb = set(a.split()), set(b.split())
-    if ta and tb and (ta <= tb or tb <= ta):
-        return True, f"{a} ≡ {b} (one name is contained in the other)"
+    # Containment is tested on the token SEQUENCE from the front, not on token
+    # sets. English organisation names carry the distinguishing element first
+    # and pile qualifiers on the end, so dropping TRAILING words preserves
+    # identity ("Acme" / "Acme Logistics") while dropping LEADING words
+    # destroys it: "<Place> Bank of <Country>" and "Bank of <Country>" are two
+    # different banks, and a country is not its own central bank. Set
+    # containment discards order and so answered "same" to every one of those
+    # -- the single judgement this module promises never to make. Nothing
+    # reached this branch, because blocking keys on the exact entity_key, but a
+    # wrong merge corrupts every comparison downstream.
+    wa, wb = a.split(), b.split()
+    short, long_ = (wa, wb) if len(wa) <= len(wb) else (wb, wa)
+    if short and long_[:len(short)] == short:
+        return True, f"{a} ≡ {b} (one name extends the other)"
     return False, f"{a} ≠ {b}"

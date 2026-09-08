@@ -18,10 +18,9 @@ Match ladder, strictest first:
 from __future__ import annotations
 
 import difflib
-import re
 from dataclasses import dataclass
 
-from .pdf import Page, Word, normalize_ws
+from .pdf import Page, Word
 
 FUZZY_MIN = 0.90
 MIN_QUOTE_CHARS = 12
@@ -63,21 +62,49 @@ def _bboxes_for_span(page: Page, start: int, end: int) -> list[list[float]]:
     return out
 
 
-def _norm_index(page_text: str) -> tuple[str, list[int]]:
-    """Whitespace-folded text plus a map from folded offset -> raw offset."""
-    out, idx = [], []
+# The folds `normalize_ws` applies, as a table this module can walk one
+# character at a time. Two of them change length -- a ligature expands to two
+# letters, a soft hyphen disappears -- which is what made the old two-function
+# approach wrong.
+_FOLD = {
+    "­": "",                                    # soft hyphen: dropped
+    "ﬁ": "fi", "ﬂ": "fl",                  # ligatures: one char -> two
+    "‘": "'", "’": "'",
+    "“": '"', "”": '"',
+    "–": "-", "—": "-", "−": "-",
+    " ": " ", " ": " ", " ": " ",
+}
+
+
+def _fold_index(text: str) -> tuple[str, list[int]]:
+    """Folded, whitespace-collapsed, lowercased text plus folded -> raw offsets.
+
+    One pass, so every folded offset maps to the raw character that produced
+    it. This used to be two functions: the folded string came from
+    `normalize_ws` and the offset map from a whitespace-only walk. They
+    disagree whenever a fold changes length, so a single ligature earlier on
+    the page pushed every later offset out by one and the located span -- and
+    the highlight box drawn from it -- came back shifted. A soft hyphen shifted
+    it the other way. Both are ordinary in typeset PDFs.
+    """
+    out: list[str] = []
+    idx: list[int] = []
     prev_space = True
-    for i, ch in enumerate(page_text):
-        if ch.isspace():
+    for i, ch in enumerate(text):
+        repl = _FOLD.get(ch, ch)
+        if not repl:
+            continue                                  # soft hyphen: no output
+        if repl.isspace():
             if prev_space:
                 continue
             out.append(" ")
             idx.append(i)
             prev_space = True
-        else:
-            out.append(ch)
-            idx.append(i)
-            prev_space = False
+            continue
+        for c in repl.lower():
+            out.append(c)
+            idx.append(i)                             # both halves point at the ligature
+        prev_space = False
     return "".join(out), idx
 
 
@@ -92,39 +119,37 @@ def locate(page: Page, quote: str) -> Grounding:
         return Grounding("exact", pos, pos + len(quote),
                          _bboxes_for_span(page, pos, pos + len(quote)), CONF["exact"], quote)
 
-    # 2. normalized
-    folded, back = _norm_index(raw)
-    nfolded = normalize_ws(folded).lower()
-    nquote = normalize_ws(quote).lower()
-    # normalize_ws may shift offsets; rebuild a parallel simple fold instead
-    simple = re.sub(r"\s+", " ", raw).lower()
-    simple_map = _norm_index(raw)[1]
-    pos = simple.find(nquote)
-    if pos < 0:
-        pos = nfolded.find(nquote)
-        simple_map = back
-    if pos >= 0 and pos < len(simple_map):
-        s = simple_map[pos]
-        e = simple_map[min(pos + len(nquote), len(simple_map)) - 1] + 1
+    # 2. normalized. Page and quote are folded by the same walk, so an offset
+    # found in one maps correctly into the other.
+    folded, back = _fold_index(raw)
+    nquote = _fold_index(quote)[0].strip()
+
+    def _span(pos: int) -> tuple[int, int]:
+        s = back[pos]
+        e = back[min(pos + len(nquote), len(back)) - 1] + 1
+        return s, e
+
+    pos = folded.find(nquote)
+    if nquote and pos >= 0 and pos < len(back):
+        s, e = _span(pos)
         return Grounding("normalized", s, e, _bboxes_for_span(page, s, e),
                          CONF["normalized"], raw[s:e])
 
     # 3. fuzzy over a sliding window of the same length
-    if len(nquote) >= MIN_QUOTE_CHARS and simple:
+    if len(nquote) >= MIN_QUOTE_CHARS and folded:
         best_ratio, best_pos = 0.0, -1
         step = max(1, len(nquote) // 8)
         matcher = difflib.SequenceMatcher(autojunk=False, b=nquote)
-        for i in range(0, max(1, len(simple) - len(nquote)), step):
-            window = simple[i:i + len(nquote)]
+        for i in range(0, max(1, len(folded) - len(nquote)), step):
+            window = folded[i:i + len(nquote)]
             matcher.set_seq1(window)
             if matcher.real_quick_ratio() < best_ratio or matcher.quick_ratio() < best_ratio:
                 continue
             r = matcher.ratio()
             if r > best_ratio:
                 best_ratio, best_pos = r, i
-        if best_ratio >= FUZZY_MIN and best_pos >= 0 and best_pos < len(simple_map):
-            s = simple_map[best_pos]
-            e = simple_map[min(best_pos + len(nquote), len(simple_map)) - 1] + 1
+        if best_ratio >= FUZZY_MIN and best_pos >= 0 and best_pos < len(back):
+            s, e = _span(best_pos)
             return Grounding("fuzzy", s, e, _bboxes_for_span(page, s, e),
                              CONF["fuzzy"] * best_ratio, raw[s:e])
 

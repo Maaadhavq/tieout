@@ -164,7 +164,8 @@ def _store_one(store, doc_id: str, page, raw: dict) -> str | None:
         return _reject(store, doc_id, page.number, "quote_not_found", raw)
 
     kind = raw.get("fact_kind") or "measurement"
-    qty = parse_quantity(raw.get("value"), raw.get("unit"), raw.get("magnitude"))
+    qty = parse_quantity(raw.get("value"), raw.get("unit"), raw.get("magnitude"),
+                         context=quote)
     value_text = (raw.get("value_text") or "").strip() or None
 
     if kind == "measurement" and qty is None:

@@ -26,6 +26,36 @@ from ..normalize.metrics import token_overlap
 NEAR_MISS_MIN = 0.34
 
 
+def near_miss(ka: str, kb: str) -> bool:
+    """Is this metric-key pair worth asking about?
+
+    Jaccard alone missed the case the assignment is actually about -- one
+    document writing "revenue" where another writes "revenue from operations".
+    Those overlap 0.333 against a 0.34 floor, so the pair was never proposed and
+    the adjudicator never saw it; a cross-magnitude corroboration and a
+    period reconciliation were both lost to seven thousandths.
+
+    Lowering the floor is the wrong repair. At 0.33 the starter corpus gains 714
+    pairs, and they are things like "gfce growth" against "real growth" or
+    "adjusted ebitda" against "ebitda margin": different metrics that happen to
+    share one common word, which would spend a capped adjudication budget on
+    questions with an obvious answer.
+
+    Containment is the sharper signal, and it is the same distinction that
+    separates two organisations sharing a head noun. When one key's tokens are a
+    subset of the other's, one label is a more specific form of the other and
+    the pair is a real question. When they merely intersect, it usually is not.
+    Adds 303 pairs rather than 714, and they are all of the shape
+    "income ~ other comprehensive income".
+    """
+    ta, tb = set(ka.split("_")), set(kb.split("_"))
+    if not ta or not tb:
+        return False
+    if token_overlap(ka, kb) >= NEAR_MISS_MIN:
+        return True
+    return ta != tb and (ta <= tb or tb <= ta)
+
+
 def block_key(fact: dict) -> tuple[str, str]:
     return (fact["entity_key"], fact["metric_key"])
 
@@ -65,7 +95,7 @@ def candidate_pairs(facts: list[dict], cross_document_only: bool = False) -> lis
         keys = sorted(by_metric)
         for i, ka in enumerate(keys):
             for kb in keys[i + 1:]:
-                if token_overlap(ka, kb) >= NEAR_MISS_MIN:
+                if near_miss(ka, kb):
                     for a in by_metric[ka]:
                         for b in by_metric[kb]:
                             _add(pairs, seen, a, b, cross_document_only)
@@ -94,7 +124,7 @@ def pairs_for_new_facts(new_facts: list[dict], existing: list[dict]) -> list[tup
     for f in new_facts:
         for other in old_by_entity.get(f["entity_key"], ()):
             if other["metric_key"] == f["metric_key"] or \
-               token_overlap(other["metric_key"], f["metric_key"]) >= NEAR_MISS_MIN:
+               near_miss(other["metric_key"], f["metric_key"]):
                 _add(pairs, seen, f, other, False)
     return pairs
 

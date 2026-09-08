@@ -172,3 +172,65 @@ def test_unrecognised_units_are_kept_apart_not_merged():
     assert len(set(seen.values())) == len(seen), f"two units share a key: {seen}"
     assert parse_quantity("100", "Mn").unit == "count",         "a magnitude word is not a unit"
     assert parse_quantity("15,065", None).unit == "count"
+
+
+def test_a_stated_geography_survives_normalization():
+    """`geography` is declared in DIMENSIONS and asked for in the extraction
+    prompt, but it had no entry in _VOCAB. normalize_basis walked _VOCAB to
+    build `known`, so the dimension was never read, and the leftover pass
+    skips anything already in DIMENSIONS, so it was not preserved either: a
+    stated geography fell between the two and vanished.
+
+    The committed cache shows the model returned one on 99 facts and every one
+    was discarded. It is an open-ended dimension -- a region, a population, an
+    exchange -- so it cannot have a vocabulary; it is kept verbatim when the
+    document states it, and never guessed from prose.
+    """
+    for value in ("all-India", "Maharashtra", "urban", "Workers", "NSE"):
+        known, leftover = basis_mod.normalize_basis({"geography": value})
+        assert known.get("geography") or leftover.get("geography"), \
+            f"geography={value!r} was dropped by normalize_basis"
+
+    # Two figures that differ only by the population they cover are reconciled
+    # on that dimension, not reported as a contradiction.
+    a = fact("g1", "Northwind", "injury frequency rate", "0.56", period="FY24",
+             basis={"geography": "Employees"}, doc="esg.pdf")
+    b = fact("g2", "Northwind", "injury frequency rate", "1.21", period="FY24",
+             basis={"geography": "Workers"}, doc="esg.pdf")
+    v = compare(a, b)
+    assert v.label == RECONCILED, f"expected reconciled, got {v.label}"
+    assert v.dimension == "geography", f"reconciled on {v.dimension!r}"
+
+    # Absent from the document, it is not invented from the sentence.
+    known, _ = basis_mod.normalize_basis({}, context="rainfall across all-India was high")
+    assert "geography" not in known, "geography was guessed from prose"
+
+
+def test_a_one_sided_geography_does_not_suppress_a_contradiction():
+    """Reading `geography` naively cost more than it bought.
+
+    It arrives on ~5% of facts and usually on one side of a pair only -- often
+    just restating the entity. Counted as a dimension "one side states", it
+    demoted a genuine cross-document contradiction to INSUFFICIENT_EVIDENCE
+    because one publisher named the country the other left implicit. Before the
+    dimension was read at all, that pair contradicted; a fix that silences a
+    real finding is worse than the data loss it repairs.
+
+    One-sided: ignored, exactly as before. Both-sided: compared, which is the
+    whole gain.
+    """
+    plain = fact("s1", "Northwind", "output growth", "6.7", "per cent",
+                 period="Q1 FY25", doc="a.pdf")
+    with_geo = fact("s2", "Northwind", "output growth", "6.5", "per cent",
+                    period="Q1:2024-25", basis={"geography": "Northwind"}, doc="b.pdf")
+    v = compare(plain, with_geo)
+    assert v.label == CONTRADICTS, \
+        f"a one-sided geography suppressed a contradiction: {v.label}/{v.dimension}"
+
+    both = fact("s3", "Northwind", "output growth", "6.5", "per cent",
+                period="Q1 FY25", basis={"geography": "urban"}, doc="a.pdf")
+    other = fact("s4", "Northwind", "output growth", "2.1", "per cent",
+                 period="Q1 FY25", basis={"geography": "rural"}, doc="b.pdf")
+    v = compare(both, other)
+    assert v.label == RECONCILED and v.dimension == "geography", \
+        f"both-sided geography was not compared: {v.label}/{v.dimension}"

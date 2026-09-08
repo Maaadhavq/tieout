@@ -18,3 +18,6 @@ tieout.db
 data/uploads/
 data/pages/
 .scratch/
+
+# stray artefact from an early path-traversal test; never part of the project
+evil.pdf

@@ -122,3 +122,38 @@ def test_first_person_entities_are_refused():
     for good in ("Delhivery Limited", "India", "Spoton Logistics", "Sahil Barua",
                  "Reserve Bank of India", "International Monetary Fund"):
         assert is_resolvable(entity_key(good)), f"{good!r} was wrongly refused"
+
+
+def test_containment_does_not_merge_distinct_organisations():
+    """One name may extend another, but a LEADING qualifier is what tells two
+    institutions apart: "State Bank of India" and "Bank of India" are different
+    banks, and "India" is not the "Reserve Bank of India".
+
+    Containment was tested on token *sets*, which discards word order, so all
+    of these answered "same" -- the one error the module docstring promises
+    never to make. Nothing reached it in practice because blocking keys on the
+    exact entity_key, so the corpus shows no damage; that makes this a landmine
+    rather than a live fault, and it is why the fix changes no stored figure.
+    """
+    from tieout.normalize.entities import entity_key, same_entity
+
+    def merged(a: str, b: str) -> bool:
+        return same_entity(entity_key(a), entity_key(b))[0]
+
+    for a, b in (("State Bank of India", "Bank of India"),
+                 ("Reserve Bank of India", "Bank of India"),
+                 ("Punjab National Bank", "National Bank"),
+                 ("India", "Reserve Bank of India"),
+                 ("India", "Government of India"),
+                 ("Food Corporation of India", "India"),
+                 ("European Union", "Union"),
+                 ("basmati rice", "rice")):
+        assert not merged(a, b), f"{a!r} was wrongly merged with {b!r}"
+
+    # A trailing qualifier still folds -- that is what the rule exists for.
+    for a, b in (("Delhivery Limited", "Delhivery"),
+                 ("Reserve Bank", "Reserve Bank of India"),
+                 ("HDFC Bank", "HDFC"),
+                 ("Spoton", "Spoton Logistics"),
+                 ("Tata Motors", "Tata Motors Limited")):
+        assert merged(a, b), f"{a!r} should still fold with {b!r}"

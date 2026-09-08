@@ -74,3 +74,53 @@ def test_formatting_round_trips_the_written_form():
 def test_unparseable():
     assert parse_quantity("not a number") is None
     assert parse_quantity(None) is None
+
+
+def test_a_magnitude_in_a_rate_denominator_does_not_scale_the_value():
+    """"0.56 per one million-person hours worked" is an injury frequency of
+    0.56. The magnitude scan searched the whole blob, found "million" inside
+    the rate's denominator and multiplied by it, storing 560,000 -- and the
+    explanation then read "0.56 million" for a safety statistic. The model had
+    correctly returned no magnitude at all; this was ours.
+    """
+    q = parse_quantity("0.56", "per one million-person hours worked")
+    assert q.value == 0.56, f"rate scaled by its own denominator: {q.value}"
+    assert q.magnitude is None
+
+    for unit in ("per million people", "per one lakh population",
+                 "per a thousand live births"):
+        assert parse_quantity("2.4", unit).value == 2.4, unit
+
+    # A magnitude BEFORE "per" still applies -- it scales the numerator.
+    q = parse_quantity("12.5", "crore per annum")
+    assert q.value == 12.5e7 and q.magnitude == "crore"
+    q = parse_quantity("81,415.38", "Rs. million")
+    assert q.value == 81415.38e6 and q.magnitude == "million"
+
+
+def test_a_currency_the_extractor_dropped_is_read_back_from_the_quote():
+    """"Rs. 1,000 crore" comes back as value="1,000", unit="crore": the scale
+    word lands in the unit field and the currency is left in the sentence. The
+    figure then normalized to a unitless count, so it would not compare against
+    the same amount written "Rs. 10,000 million" -- the cross-magnitude match
+    this system is built to make.
+    """
+    quote = "Northwind Logistics recorded revenue of Rs. 1,000 crore in FY2024."
+    a = parse_quantity("1,000", "crore", None, context=quote)
+    b = parse_quantity("10,000", "Rs. million", None)
+    assert a.unit == "INR", f"currency not recovered: {a.unit}"
+    assert comparable_units(a, b) and agree(a, b)[0], f"{a.value} vs {b.value}"
+
+    # Only when the unit field is nothing but a scale word. A stated unit wins,
+    # and a fact with no unit at all is NOT given a currency from its sentence.
+    counted = parse_quantity(
+        "1,200", "people", None,
+        context="The Company employed 1,200 people; revenue was Rs. 10,000 million.")
+    assert counted.unit == "person", counted.unit
+    bare = parse_quantity(
+        "1,200", None, None,
+        context="The Company employed 1,200 people; revenue was Rs. 10,000 million.")
+    assert bare.unit == "count", f"a unitless count was given a currency: {bare.unit}"
+
+    # No context, no change in behaviour.
+    assert parse_quantity("1,000", "crore", None).unit == "count"

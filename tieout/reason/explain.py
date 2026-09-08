@@ -22,7 +22,10 @@ DIMENSION_PHRASE = {
     "consolidation": "one is consolidated and the other is not",
     "price_basis": "they are stated on different price bases",
     "measure": "they measure different aggregates",
-    "geography": "they cover different areas",
+    # The extractor files anything that narrows a figure's scope under
+    # `geography` -- a region, but also a population or a venue. Saying "areas"
+    # produced "they cover different areas (employees vs workers)".
+    "geography": "they cover different populations or areas",
     "adjustment": "one is adjusted and the other is not",
     "unit": "they are stated in different units",
     "metric": "it is unclear whether they measure the same thing",
@@ -38,6 +41,7 @@ RECONCILE_HINT = {
     "measure": "These are different aggregates and are not expected to match.",
     "sign_convention": "Filings write a loss as a positive number in the narrative and in parentheses in the statements.",
     "valuation": "Basic and market prices differ by product taxes and subsidies.",
+    "geography": "Two populations or regions measured the same way are not rival claims about one of them.",
 }
 
 
