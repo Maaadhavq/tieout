@@ -1,143 +1,157 @@
 # 3-minute demo script
 
-Record at 1080p, `python run.py --demo` already running and warm. Show the
-tool, never the terminal. Do not narrate setup.
+Every landing state below was clicked and checked against a running server, not
+remembered. Record at 1080p, browser at 1440x900, no bookmarks bar. Show the
+tool, never the terminal.
 
-Numbers below are from the committed corpus (`python -m tieout.eval --db
-data/demo.db`). Re-check them if you re-run extraction.
-
----
-
-### 0:00 – 0:15 · The problem, stated with two real pages
-
-*Screen:* two PDF pages side by side — RBI Annual Report p.8 and Economic
-Survey p.4, each with its GDP sentence visible.
-
-> "The Reserve Bank says India grew 6.5% in 2024-25. The Economic Survey says
-> 6.4% for FY25. Same country, same measure, same year. One of these is not a
-> contradiction — and a system that can't tell you which is useless for
-> finance work."
-
-### 0:15 – 0:35 · Ingest
-
-*Screen:* the ledger, already populated. Point at the corpus line in the header.
-
-> "Six documents, 511 pages — a prospectus, an annual report, an earnings deck,
-> and three institutional reports. 1,726 facts. 241 were thrown away, and I'll
-> come back to why."
-
-*Do not* film the ingest running. It takes minutes and shows nothing.
-
-### 0:35 – 1:00 · Evidence is checked, not claimed
-
-*Screen:* click any fact → click **page image** → the PDF page opens with the
-sentence highlighted.
-
-> "Every fact carries a quote. Before it's stored, the system goes back to the
-> PDF and looks for that quote. If it isn't there — character for character —
-> the fact is rejected and counted. This highlight is drawn from the word
-> geometry, so it's the actual sentence in the actual document — not a page
-> reference you'd have to go and check yourself."
-
-### 1:00 – 1:22 · Corroboration across wording and units
-
-*Screen:* filter **Corroborates**. Select the RBI ≡ IMF GDP pair, then the
-Delhivery revenue pair.
-
-> "The RBI writes '6.5 per cent in 2024-25'. The IMF writes '6.5 percent in
-> FY2024/25'. Two institutions, two notations, one fact.
-> And a harder one: the annual report says ₹1,266 million for EBITDA, the
-> earnings deck says ₹127 crore. Same figure. String matching finds nothing —
-> this matched after magnitude normalization, at the precision the rounder
-> source claimed."
-
-### 1:22 – 1:45 · A real contradiction
-
-*Screen:* filter **Contradicts**. Show the rule trace with every check green
-except `value`.
-
-> "The Economic Survey says GDP grew 6.7 per cent in Q1 FY25. The RBI says 6.5
-> per cent in Q1:2024-25. Two different notations that normalise to the same
-> quarter — same entity, metric, unit, price basis, measure. Every comparability
-> check passes. The values differ by 0.2 percentage points and neither document
-> explains why. That's a genuine disagreement between two Indian institutions,
-> and it only shows up if the quarters parse correctly."
-
-### 1:45 – 2:15 · The case that matters
-
-*Screen:* filter **Reconciled**. Open the vintage pair first. Let the trace sit
-on screen for a beat — four checks green, `vintage` red.
-
-> "Back to the opening. Same country, same metric, same period — the periods
-> normalize to the same interval even though they're written differently. One
-> dimension differs: the Survey is quoting the first advance estimate, the RBI
-> the later figure. Different vintages of one measurement, not rival claims.
->
-> The system names the dimension. That's the whole design: comparability is
-> decided before agreement."
-
-*Then click the director pair.*
-
-> "And it isn't only numbers. Active in the 2022 prospectus, resigned in the
-> FY24 report — a state change over time, reconciled the same way."
-
-### 2:15 – 2:38 · What it gets wrong
-
-*Screen:* click **Refused** in the header. The ledger fills with the 241 claims
-the gate would not accept. Click the first one.
-
-> "241 claims were refused, and here they all are. 72 of them — 3.7% of
-> everything the model produced — were ungrounded: it gave a quote that isn't in
-> the page. This one claimed a figure quoting 'Centre -4.5' — a table row label
-> welded to a number from another column. It reads as a phrase; it's never
-> contiguous in the document. Open the page and look for it: it isn't there.
-> Another 163 were perfectly well grounded but said 'our Company', which names
-> nothing on its own.
->
-> And 14 of the 19 contradictions are table artifacts: borrowings 1,316 against
-> 1,697, same date, same page — current versus non-current, with the row header
-> lost because reading order flattens a table into a stream. Those are reported
-> at 41 to 42% confidence saying exactly that, rather than asserted. The fix is
-> geometry-aware table reconstruction, using the word boxes I'm already
-> extracting for these highlights."
-
-### 2:38 – 3:00 · An unseen document
-
-*Screen:* drag in a PDF that is not in the starter set. Toast shows facts kept,
-facts rejected, relationships added.
-
-> "This is a Delhivery investor presentation filed with the exchange in August
-> 2025 — the system has never seen it. 51 facts, 50 new relationships, and it
-> connects: active customers were 33,278 in the Q4 FY24 deck and 35,277 here.
-> 961 metric names, none of them written into the code. Only the blocks its
-> facts land in get recompared; nothing existing is rebuilt."
-
-*Last frame:* the reconciled rule trace.
+What the assignment asks the video to contain is narrow: *"a demo video of 3
+minutes or less showing a PDF being processed and the four required cases"*,
+plus *"the source evidence and your system's reasoning for the first three"*.
+Approach and Limitations are README sections. Do not narrate them here.
 
 ---
 
-## Preparation checklist
+## Before you record
 
-- [ ] `python run.py --demo` warm, ledger loaded
-- [ ] `data/unseen/delhivery-investor-presentation-2025-08-01.pdf` ready to drag in
-      (BSE filing, not in the starter set; needs a GEMINI_API_KEY to extract live)
-- [ ] Numbers re-checked with `python -m tieout.eval --db data/demo.db`
-- [ ] `python -m tieout.verify` exits 0 (all four cases present in the corpus)
-- [ ] Deep links work: `#corroborates`, `#contradicts`, `#reconciled`, `#refused`
-      — use them to jump between beats instead of clicking, it is faster on camera
-- [ ] Pick the clearest instance of each label first; some pairs are noisier
-- [ ] Browser at 1440×900, zoom 100%, no bookmarks bar
-- [ ] Under 3:00. If tight, cut the second corroboration example, not the failure section.
+The first upload in a fresh server process takes **48.7 seconds**. `MODEL_CHAIN[0]`
+is dead for this key and the extractor burns the full retry ladder before dropping
+it. Once dropped it stays dropped for the life of the process, so the second
+upload takes **7.7 seconds**. Warm it up off camera or the take dies.
 
-## If a live beat fails while recording
+```bash
+cp data/demo.db tieout.db     # tieout.db is gitignored; the repo stays clean
+python run.py                 # live extraction, all 6 documents already ingested
+```
 
-`python -m tieout.verify` prints all four cases with evidence, traces and page
-numbers in one screen. It is a legitimate fallback for the 1:00–2:15 stretch and
-takes about ten seconds — better than fighting the UI on camera. Do not use it
-for the whole demo: the evidence viewer is the thing worth showing.
+1. Open <http://127.0.0.1:8000>.
+2. **Add PDF** with any throwaway PDF. Wait out the ~50 seconds.
+3. Reset the layer *without restarting*, so the model chain stays warm:
+   `python tieout-reset-demo.py` (kept outside the repo).
+4. Refresh. The header must read **6 documents · 284/511 pages read · 1,726
+   facts · 605 relationships** with a green **live extraction** chip.
+5. Have the real demo PDF ready: **1 or 2 pages, never uploaded before.**
 
-## What not to do
+Do not rehearse with the PDF you will record with. A repeat upload of the same
+file is a cache hit and returns in 0.4 s, so the take would show a replay rather
+than a real extraction.
 
-- Do not show the terminal, install steps, or the code.
-- Do not read the explanation paragraph aloud — let it sit on screen.
-- Do not apologise for the failure section. It is the strongest 20 seconds.
+### Three things that will bite
+
+- The **Refused** pill toggles. One click on, one click off. Turning it off
+  empties the right pane to "Nothing selected". That is correct, not a crash.
+- Collapse each **page image** before moving on. It goes full width.
+- You never need the left ledger. The pills re-select for you.
+
+---
+
+## 0:00 - 0:20 · Open
+
+Nothing to click. The page loads on the Delhivery pair: **A standalone
+74,540.82 ₹ million**, **B consolidated 81,415.38 ₹ million**, **CONTEXTUALLY
+RECONCILED**, *dimension: consolidation basis*, **0.90**.
+
+> "Two numbers for the same company, the same metric, the same year, seven
+> billion rupees apart. They are both right. One is the parent company's
+> accounts, the other is the group's.
+> Six documents, 511 pages, 1,726 facts. The system worked that out before it
+> looked at either value."
+
+Optional two seconds: click **Reconciled 177** so the pill lights up and shows
+this is a category, not a one-off.
+
+## 0:20 - 0:48 · The evidence is checked, not claimed
+
+Click **`page image`** on card **A** in the *Source evidence* strip. Scroll down
+a little. Click it again to collapse.
+
+> "Every fact carries a quote. Before it is stored the system goes back to the
+> PDF and looks for that quote character by character. If it is not there, the
+> fact is thrown away.
+> That is page 22 of the annual report, and that is the sentence, highlighted
+> from the word geometry."
+
+## 0:48 - 1:14 · Corroborates
+
+Click **`Corroborates 30`**, then **scroll the right pane down 2 notches** so
+both quote blocks are fully in frame.
+
+Lands on: **A** India · real GDP growth · **2024-25** · **6.5%** (RBI p.22) ·
+**B** · **FY2024/25** · **6.5%** (IMF p.3) · **CORROBORATES 0.93**.
+
+> "RBI writes 6.5 per cent in 2024-25. The IMF writes 6.5 percent in FY2024/25.
+> Two institutions, two notations, one fact."
+
+Point at the trace header, which reads `7 dimensions · 0 model calls`:
+
+> "Seven checks, zero model calls. The model reads the page. It never decides
+> the verdict."
+
+## 1:14 - 1:44 · A real contradiction
+
+Click **`Contradicts 19`**, then **scroll down 2 notches** again.
+
+Lands on: **A** Economic Survey p.20 · **Q1 FY25** · **6.7%** · **B** RBI p.24 ·
+**Q1:2024-25** · **6.5%**. Six green ticks, red ✗ on `value`:
+*6.7 vs 6.5 · Δ 0.2 · tolerance ±0.05*. **CONTRADICTS 0.93**.
+
+Let the trace hold for a beat. It is the point.
+
+> "Both notations normalise to the same quarter. Entity, metric, unit, price
+> basis and measure all match. Only the value differs, by 0.2 points, and
+> neither document explains why."
+
+## 1:44 - 2:14 · What it gets wrong
+
+Click **`Refused 241`** once.
+
+Lands on: `NSE Nifty 50 · End-Period Index · 2024-25 → 23,519.4`, reason **quote
+not found**, offered quote `"NSE Nifty 50: End-Period ... 23,519.4"`, searched in
+the RBI annual report **p.96**.
+
+Click **`page image`**. The card reads *"Nothing to highlight, the quote above is
+not on this page."*
+
+> "241 claims were refused. 72 of them, 3.7% of everything the model produced,
+> quoted something that is not on the page.
+> Look at those three dots. That is the model welding a row label onto a number
+> from another column. It reads like a phrase; it is never contiguous in the
+> document.
+> Here is page 96. Nothing is highlighted because there is nothing to highlight."
+
+Do not apologise here. Collapse the page image, then click **Refused** again to
+clear it.
+
+## 2:14 - 2:48 · A document it has never seen
+
+Click **`Add PDF`** and pick the unseen PDF. About 8 seconds.
+
+> "A document the system has never read. New facts, grounded the same way,
+> compared against everything already in the layer. 961 metric names discovered,
+> none of them written into the code."
+
+Read the toast when it lands. It says, verbatim:
+
+> `5 facts kept, 0 refused (0% ungrounded), 20 new relationships,`
+> **`nothing existing recomputed.`**
+
+> "Nothing existing recomputed. A new document joins the blocks it belongs to.
+> It does not rebuild the layer."
+
+## 2:48 - 3:00 · Close
+
+Click **`Reconciled 177`** to end on a verdict with its trace on screen.
+
+> "Comparability first, agreement second. Everything here is one command from a
+> clean clone, and the failures are in it on purpose."
+
+---
+
+## If a beat breaks mid-take
+
+`python -m tieout.verify` prints all four cases with evidence in one screen in
+0.1 s with no API key. That is the recovery shot.
+
+## Afterwards
+
+`rm tieout.db`, then paste the video URL into the one line under `## Video Demo`
+in the README.

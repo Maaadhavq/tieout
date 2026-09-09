@@ -1,31 +1,11 @@
 # Tie-Out, a fact knowledge layer with an audit trail
 
 Tie-Out reads PDFs, pulls out claims it can quote, and works out whether two
-claims agree, disagree, or only look like they disagree. Every fact it keeps
-carries the sentence it came from, and you can click through to see that
-sentence highlighted on the actual page.
+claims agree, disagree, or only look like they disagree. Every fact carries the
+sentence it came from, and you can click through to that sentence highlighted on
+the page.
 
-**[3-minute demo video](#video-demo)**  ·  **[live viewer, no install](https://maaadhavq.github.io/tieout/)**  ·  **[the four required cases](#start-here-all-four-required-cases-no-api-key-under-a-second)**
-
-![The evidence viewer: fact ledger, comparability trace, and the source page with the quote highlighted](docs/screenshot.png)
-
-The idea it rests on:
-
-> **Whether two numbers are comparable is a separate question, asked first,
-> from whether they agree.**
-
-So every fact carries a **claim frame** of entity, metric, unit, period and
-basis, and the comparator walks those five before it looks at a single value:
-
-| the frame | the values | the verdict |
-|---|---|---|
-| identical | agree within tolerance | `CORROBORATES` |
-| identical | differ beyond tolerance | `CONTRADICTS` |
-| differs on exactly one dimension | irrelevant | `CONTEXTUALLY_RECONCILED`, naming the dimension |
-| cannot be established | n/a | `INSUFFICIENT_EVIDENCE` |
-
-No model takes part in that decision. It is rules, it is unit-tested, and it
-shows its working on screen.
+**[3-minute demo video](https://drive.google.com/file/d/1eskQUdjXgBxpPLj_ICCHYK3TMX_NsZYR/view?usp=sharing)**  ·  **[live viewer, no install](https://maaadhavq.github.io/tieout/)**  ·  **[the four required cases](#the-four-required-cases-no-key-under-a-second)**
 
 ---
 
@@ -38,46 +18,57 @@ python -m pip install -r requirements.txt
 
 Python 3.10+. The real dependencies are PyMuPDF, FastAPI and the Gemini SDK.
 
-### Start here: all four required cases, no API key, under a second
+### The four required cases, no key, under a second
 
 ```bash
 python -m tieout.verify
 ```
 
-It prints each case with both facts, the full comparability trace, both
-verbatim quotes with document and page, the confidence and the explanation, and
-exits non-zero if any case is missing. The cases are found **by query, not by
-hard-coded ids**, so it works on any corpus, including one you build yourself.
+Prints each case with both facts, the full comparability trace, both verbatim
+quotes with document and page, the confidence and the explanation. Exits
+non-zero if a case is missing.
 
 If you read nothing else here, read that output.
 
-### Then look at it
+### Think it's rigged? Two commands
+
+```bash
+python -m tieout.verify --db data/gold.db     # same verifier, different corpus
+python run.py --demo --rebuild --no-serve     # recompute all 605 verdicts, no API calls
+```
+
+The first runs identical code over a separate 11-fact corpus. Cases are picked by
+query, never by id, so they turn up there too.
+
+The second throws away all 605 verdicts and recomputes them from the facts in 14
+seconds, no model calls. Stripping the store back to the cached page responses and
+rebuilding everything gives the same 1,726 facts and 241 refusals too.
+
+### See it
 
 ```bash
 python run.py --demo
 ```
 
-Replays the committed extraction cache over the starter PDFs and serves the
-viewer at <http://127.0.0.1:8000>. Same result as a live run, zero API calls.
-This is the corpus every number below comes from.
+Replays the committed cache and serves the viewer at <http://127.0.0.1:8000>.
+Zero API calls. Every number below comes from this corpus.
 
-`python run.py --gold` serves a second, smaller corpus built from eleven facts
-I located by hand. The UI always says which one is on screen.
+`python run.py --gold` serves the smaller hand-labelled corpus instead. The UI
+says which one is on screen.
 
-### Running it on your own PDFs, the only step that needs a key
+### Your own PDFs, the only step that needs a key
 
 ```bash
 cp .env.example .env        # then put your Gemini key in it
 python run.py               # ingests data/starter-datasets/, then serves
 ```
 
-Then use **Add PDF** in the viewer, or `python run.py --paths your.pdf`.
+Then **Add PDF** in the viewer, or `python run.py --paths your.pdf`. No PDF to
+hand? `data/unseen/` holds one the system has never read.
 
-A free key from [aistudio.google.com](https://aistudio.google.com/apikey) takes
-a minute, and this whole corpus was extracted on the free tier. Only *new*
-documents need one; everything above runs off the committed cache. Upload
-without a key and the app says so, rather than reporting zero facts as a
-failure.
+A free key from [aistudio.google.com](https://aistudio.google.com/apikey) takes a
+minute, and this whole corpus came off the free tier. Only new documents need one.
+Upload without a key and the app says so instead of reporting zero facts.
 
 ### Tests, evaluation, exports
 
@@ -87,34 +78,50 @@ python -m tieout.eval --db data/demo.db    # accuracy and extraction numbers
 curl -o facts.csv localhost:8000/api/export.csv
 ```
 
-Every CSV row carries its document, page, verbatim quote and match quality
-alongside the value. `refused.csv` is the working behind the hallucination rate:
-every claim the gate rejected, with the model's own words intact.
+Every CSV row carries its document, page, quote and match quality beside the
+value. `refused.csv` is the working behind the hallucination rate.
 
-### Or just look at it without installing anything
+### Or without installing anything
 
 [maaadhavq.github.io/tieout](https://maaadhavq.github.io/tieout/) is the same
-viewer as a static snapshot, with every quote and page image intact. Deep links
-go straight to each case:
+viewer as a static snapshot, deep-linked per case:
 [corroborates](https://maaadhavq.github.io/tieout/#corroborates),
 [contradicts](https://maaadhavq.github.io/tieout/#contradicts),
 [reconciled](https://maaadhavq.github.io/tieout/#reconciled),
-[refused](https://maaadhavq.github.io/tieout/#refused). It is read-only, since
-GitHub Pages runs no Python, so uploading needs a local run.
+[refused](https://maaadhavq.github.io/tieout/#refused). Read-only, since Pages
+runs no Python.
 
 ---
 
 ## Video Demo
 
-*(link to be added)*
+**[Watch the 3-minute demo](https://drive.google.com/file/d/1eskQUdjXgBxpPLj_ICCHYK3TMX_NsZYR/view?usp=sharing)**
 
-Corroboration across two institutions, a real contradiction, a gap of seven
-billion rupees that turns out to be standalone against consolidated, and a
-claim the grounding gate threw out.
+A PDF processed live, then all four required cases with their evidence.
 
 ---
 
 ## Approach
+
+![The evidence viewer: fact ledger, comparability trace, and the source page with the quote highlighted](docs/screenshot.png)
+
+One idea holds the whole thing up:
+
+> **Whether two numbers are comparable is a separate question, asked first, from
+> whether they agree.**
+
+So every fact carries a **claim frame** of entity, metric, unit, period and
+basis, and the comparator walks those five before it looks at a value:
+
+| the frame | the values | the verdict |
+|---|---|---|
+| identical | agree within tolerance | `CORROBORATES` |
+| identical | differ beyond tolerance | `CONTRADICTS` |
+| differs on exactly one dimension | irrelevant | `CONTEXTUALLY_RECONCILED`, naming the dimension |
+| cannot be established | n/a | `INSUFFICIENT_EVIDENCE` |
+
+No model takes part in that decision. It is rules, it is unit-tested, and it
+shows its working on screen.
 
 ### The pipeline
 
@@ -141,18 +148,18 @@ flowchart TD
     class GATE gate
 ```
 
-The orange box is the only place a model reads a document. The green box checks
-its work, and no model takes part in that.
+Orange is the only place a model reads a document. Green checks its work, and no
+model takes part in that.
 
 ### The grounding gate
 
-Every fact has to carry a verbatim span. Before it is stored, that span is
-searched for in the page: exact, then whitespace and ligature normalized, then
-fuzzy. If it is not there the fact is **rejected and counted**, and the model's
-raw output is kept in a `rejects` table you can browse in the UI.
+Every fact has to carry a verbatim span. Before it is stored, that span is hunted
+for on the page: exact, then whitespace and ligature normalized, then fuzzy.
 
-That is what turns "cite your source" into "have one", and it is where the
-hallucination rate comes from. Measured over the starter corpus:
+Not there means **rejected and counted**, with the model's raw output kept in a
+`rejects` table you can browse in the UI.
+
+That is what turns "cite your source" into "have one".
 
 ```mermaid
 flowchart LR
@@ -170,17 +177,16 @@ flowchart LR
     class R bad
 ```
 
-Those 72 ungrounded claims are 3.7% of everything the model produced. That is
-the published hallucination rate, and `refused.csv` is the working behind it.
+Those 72 ungrounded claims are 3.7% of everything the model emitted. That is the
+published hallucination rate, and `refused.csv` is the working behind it.
 
-It bites, too. My first gold entry quoted `"8,142 Cr"` and the gate refused it
-as too short to be evidence, which was right. Widening it to `"₹8,142 Cr FY24
-revenue from services"` carries the value, the period and the metric.
+It bites me too. My first gold entry quoted `"8,142 Cr"`; the gate refused it as
+too short to be evidence, and it was right.
 
 ### How a pair becomes a verdict
 
-This is the part worth reading the code for. `tieout/reason/compare.py` is about
-150 lines and holds all of it:
+The part worth reading the code for. `tieout/reason/compare.py`, about 150 lines,
+holds all of it.
 
 ```mermaid
 flowchart TD
@@ -205,14 +211,13 @@ flowchart TD
     class I,X dim
 ```
 
-Simplified in one respect. A period difference inside a single document, where
-the two periods do not overlap, is a time series rather than a reconciliation
-and is suppressed. There are 384 of those.
+One simplification: a non-overlapping period difference inside a single document
+is a time series, not a reconciliation. 384 of those are suppressed.
 
 ### Normalization is where the work is
 
-Three publishers write the same year three different ways, and one company
-writes a different year the same way:
+Three publishers write the same year three different ways, and one company writes
+a different year the same way:
 
 ```
 Economic Survey  "FY25"        ─┐
@@ -221,22 +226,19 @@ IMF              "FY2024/25"   ─┘
 Delhivery        "FY24"        ─── 2023-04-01 … 2024-03-31
 ```
 
-Tolerance comes from the precision each source claimed rather than a fixed
-epsilon, so `₹81,415.38 million` and `₹8,142 crore` agree while `6.4%` and
-`6.5%` do not, even though the second pair is closer in absolute terms.
+Tolerance comes from the precision each source claimed, not a fixed epsilon. So
+`₹81,415.38 million` and `₹8,142 crore` agree, while `6.4%` and `6.5%` do not.
 
-`basis` carries the dimensions that turn an apparent contradiction into an
-explained one: consolidation, **data vintage**, price basis, valuation, measure
-and geography. Vintage matters most. Institutional publishers restate the same
-period as data firms up, and a system that ignores that reports every
-restatement as a contradiction.
+`basis` carries what turns an apparent contradiction into an explained one:
+consolidation, vintage, price basis, valuation, measure, geography. Vintage
+matters most, because institutions restate a period as data firms up, and a
+system that ignores that calls every restatement a contradiction.
 
 ### Comparison is cheap, because of blocking
 
-Facts are grouped into blocks keyed on entity and metric, and only facts inside
-a block are compared. That is 1,726 facts into 1,274 blocks and **2,628 pairs**,
-against 1,488,675 if every fact met every other: **0.18% of the naive work**,
-one pass, no API calls.
+Facts group into blocks keyed on entity and metric, and only facts inside a block
+are compared. 1,726 facts into 1,274 blocks and **2,628 pairs**, against 1,488,675
+naive: **0.18% of the work**, one pass, no API calls.
 
 ### Where a model is and is not used
 
@@ -255,76 +257,74 @@ one pass, no API calls.
 Built with Claude Code (Opus 5) for architecture, implementation and tests.
 Extraction and alias adjudication call Google Gemini Flash at runtime.
 
-I picked which four cases to demonstrate by reading the source PDFs myself,
-before the extractor existed, so the examples are not chosen from whatever the
-model happened to produce. What you see demonstrated is the system's own output:
-`verify` finds those cases by query in the extracted corpus, and every fact
-records the model that produced it, 1,612 from `gemini-flash-lite-latest` and
-114 from two others. The hand-labelled set is a separate corpus, `--gold`, and
-the UI says so when it is on screen.
+I picked the four cases by reading the source PDFs myself, before the extractor
+existed, so they are not cherry-picked from model output. What you see is still
+the system's own work: `verify` finds them by query, and every fact records which
+model produced it.
 
 ---
 
 ## The four required cases
 
-All four are in the extracted corpus (`python run.py --demo`) and reproducible
-with `python -m tieout.verify`. Page numbers are 1-based into the excerpts.
+All four are in the extracted corpus and reproduce with `python -m tieout.verify`.
+Page numbers are 1-based into the excerpts.
 
 **1. Corroborated across documents, expressed differently.**
+
 RBI Annual Report p.22 says "6.5 per cent in **2024-25**". IMF Article IV p.10
 says "India's real GDP grew by 6.5 percent in **FY2024/25**". Two institutions,
-two notations, one interval, so **CORROBORATES** at 0.93.
+two notations, one interval. **CORROBORATES at 0.93.**
 
-A harder one from the same corpus: `₹81,415.38 million` in the annual report
-against `₹8,142 crore` in the earnings deck, and `₹1,266 Mn` against `₹127 Cr`
-for EBITDA. No string matcher finds those. They match only after magnitude
-normalization, at the precision the rounder source claimed.
+Harder pair, same corpus: `₹81,415.38 million` against `₹8,142 crore`. No string
+matcher finds that. It matches only after magnitude normalization, at the
+precision the rounder source claimed.
 
 **2. A genuine contradiction.**
+
 Economic Survey p.20 says GDP "grew by **6.7 per cent** … in **Q1** … **FY25**".
-RBI p.24 says "**6.5 per cent** in **Q1:2024-25**". Same entity, metric, unit,
-price basis and measure, and the two notations normalize to the same quarter.
-The values differ by 0.2 points and neither document explains why, so
-**CONTRADICTS** at 0.93. It only surfaces if quarters parse correctly. An
-earlier version read `"Q1:2024-25"` as the whole year and reported a different,
-false contradiction instead.
+RBI p.24 says "**6.5 per cent** in **Q1:2024-25**".
+
+Same entity, metric, unit, price basis and measure, and both notations normalize
+to the same quarter. The values differ by 0.2 points and neither document explains
+why. **CONTRADICTS at 0.93.**
+
+It only surfaces if quarters parse right. An earlier version read `"Q1:2024-25"`
+as the whole year and reported a false contradiction instead.
 
 **3. An apparent contradiction explained by context.**
+
 Economic Survey p.14 says **6.4%** for FY25. RBI p.8 says **6.5%** for 2024-25.
 Everything matches except one thing: the Survey is quoting the first advance
-estimate, so this is **reconciled on data vintage** at 0.90. The same machinery
-reconciles consolidation (standalone against consolidated revenue), measure (GDP
-against GVA), and sign convention. There is a non-numeric one too: a director is
-active in the 2022 prospectus and *resigned with effect from August 24, 2023* in
-the FY24 report, a state change over time reconciled the same way.
+estimate. **Reconciled on data vintage at 0.90.**
+
+The same machinery reconciles consolidation (standalone against consolidated
+revenue), measure (GDP against GVA) and sign convention, and one non-numeric case:
+a director active in the 2022 prospectus, *resigned with effect from August 24,
+2023* in the FY24 report.
 
 **4. An extraction failure, and what I did about it.**
-Click **Refused** in the viewer to see all 241 rejected claims with the model's
-own words. Four classes:
 
-- **72 ungrounded claims, 3.7% of everything emitted.** The model gave a quote
-  that is not on the page, usually a table row label welded to a number from
-  another column, like `"Revenue from contract with customers ... 8,035.88"`.
-  *Handled: this is the grounding gate working.*
-- **163 first-person entities.** Filings say "our Company". Well grounded, but
-  they name nothing on their own, so they are refused rather than guessed at.
-  *Would improve: resolve them against the document's subject.*
-- **14 of the 19 contradictions are lost table row headers.** Reading order
-  flattens a table into a stream, so "current" and "non-current" both become
-  "Borrowings". They are hedged to 41 or 42% confidence saying exactly that.
-  *Would improve: geometry-aware reconstruction from the word boxes already
-  stored for the highlights.*
-- **One contradiction is confidently wrong.** IMF p.3 reads *"prolonged 50
-  percent U.S. tariffs, real GDP is projected to grow at 6.6 percent"*, and the
-  model took the **50** as the growth rate. The quote is on the page character
-  for character, so the gate passed it: it checks that the quote is there, not
-  which number in it the metric refers to. Compared against p.13 it becomes a
-  93%-confidence contradiction that is simply wrong. *Would improve: require the
-  value to appear near the metric mention inside the quote.*
+Click **Refused** in the viewer for all 241 rejected claims in the model's own
+words. Four classes:
+
+| what went wrong | how many | what I did |
+|---|---|---|
+| the quote is not on the page | 72, or 3.7% of everything emitted | nothing to fix: this is the gate working. Usually a table row label welded to a number from another column |
+| first-person entities, "our Company" | 163 | refused rather than guessed at. Would fix by resolving them against the document's subject |
+| lost table row headers | 14 of the 19 contradictions | hedged to 41 or 42% confidence saying exactly that. Would fix with geometry-aware reconstruction from the word boxes I already store |
+| confidently wrong | 1 | see below |
+
+That last one is worth the space. IMF p.3 reads *"prolonged 50 percent U.S.
+tariffs, real GDP is projected to grow at 6.6 percent"*, and the model took **50**
+as the growth rate.
+
+The quote is on the page character for character, so the gate passed it: it checks
+that the quote is there, not which number the metric refers to. Against p.13 that
+becomes a 93%-confidence contradiction that is simply wrong.
 
 The negative control matters as much. Economic Survey p.4 and RBI p.26 both say
-6.4% for the same country and period. A value-first system corroborates them.
-They are GDP and GVA, and the comparator suppresses the pair.
+6.4% for the same country and period, so a value-first system corroborates them.
+They are GDP and GVA. The comparator suppresses the pair.
 
 ---
 
@@ -347,46 +347,38 @@ They are GDP and GVA, and the comparator suppresses the pair.
 | relationship accuracy | 7/7 labelled pairs, 2/2 negative controls |
 | cold `--demo`, then `verify` | 0.7 s, then 0.1 s |
 
-**The run is incomplete and the numbers say so.** The free-tier daily quota ran
-out partway through, so 284 of 487 candidate pages were actually read. Resuming
-costs nothing because of the cache, and every figure above is over the pages
-that were read. `/api/stats` reports `pages_extracted` and `pages_candidate`
-separately for exactly this reason.
+**The run is incomplete and the numbers say so.** The free-tier quota ran out
+partway through, so 284 of 487 candidate pages were read and every figure above is
+over those. `/api/stats` reports `pages_extracted` and `pages_candidate`
+separately for that reason.
 
 ### What does not work yet
 
 - **First-person entities are dropped, not resolved.** 163 facts lost to "our
-  Company". Biggest single source of lost recall, and the first thing I would
-  fix.
+  Company". Biggest single source of lost recall, and the first thing I would fix.
 - **Tables lose their row headers**, which is where 14 of the 19 contradictions
   come from.
-- **The gate checks the quote, not the binding.** A sentence with two numbers
-  can have the wrong one attached and still verify exactly. One contradiction is
-  asserted at 93% and is wrong because of this.
+- **The gate checks the quote, not the binding.** A sentence with two numbers can
+  have the wrong one attached and still verify. One contradiction is asserted at
+  93% and is wrong because of it.
 - **No OCR.** A scanned page yields nothing.
-- **Relative periods are dropped.** 108 facts said "a year ago" or similar with
-  no anchor, so they get no period and any comparison returns
-  `INSUFFICIENT_EVIDENCE`. That is most of that bucket: 338 of 379 fail on
-  period.
-- **Units and entities err toward silence.** Nothing is ever converted, since
-  no conversion factor is in evidence, so rupees against dollars and TWh against
-  GWh are reported incomparable. Entity resolution is exact match or one name
-  extending another from the front, because a wrong merge corrupts everything
-  downstream. The cost is real: the same sentence came back with and without a
-  unit across two documents, and two identical facts then read as a unit
-  mismatch instead of corroborating.
-- **Metric labels sharing no word are never compared.** "headcount" and "number
-  of employees" have zero token overlap, so a genuine contradiction is missed.
-- **Confidence is composed, not calibrated.** Not enough labelled pairs to fit
-  it honestly, so I did not pretend otherwise.
-- **A PDF can address the model, and there is no way around that.** Reading the
-  document is the job. The narrower guarantee holds: nothing enters the store
-  without a quote that is really on the page, so an injection can only surface as
-  *"the document said this"*, never as an invented figure
-  (`tests/test_injection.py`).
-- **Ingest is synchronous.** An 18-page upload holds the request open for about
-  a minute. A job queue would fix that and add moving parts, so at this scale it
-  is a deliberate omission.
+- **Relative periods are dropped.** 108 facts said "a year ago" with no anchor, so
+  they get no period. That is most of that bucket: 339 of 379 fail on period.
+- **Units and entities err toward silence.** Nothing is converted, since no
+  conversion factor is in evidence, so rupees against dollars is incomparable.
+  Entities match exactly or one name extends another from the front, because a
+  wrong merge corrupts everything downstream. It costs real recall.
+- **Metric labels sharing no word are never compared.** "headcount" and "number of
+  employees" have zero token overlap, so a genuine contradiction is missed.
+- **Confidence is composed, not calibrated.** Too few labelled pairs to fit it
+  honestly, so I did not pretend otherwise.
+- **A PDF can address the model, and there is no way around that.** Reading it is
+  the job. The narrower guarantee holds: nothing is stored without a quote that is
+  really on the page, so an injection surfaces as *"the document said this"*, never
+  as an invented figure (`tests/test_injection.py`).
+- **Ingest is synchronous.** An 18-page upload holds the request open for about a
+  minute. A job queue would fix it and add moving parts, so it is a deliberate
+  omission at this scale.
 
 ### Next, in order
 
@@ -402,17 +394,14 @@ separately for exactly this reason.
 
 **Adding a document does not rebuild anything.** Blocks are keyed on stored
 columns, so a new PDF's facts are compared only against the blocks they join.
-Re-uploading one already in the layer is caught by content hash and costs
-nothing.
+Re-uploading one already in the layer is caught by content hash and costs nothing.
 
-**The decision log is `docs/DECISIONS.md`**, 29 decisions with what each cost.
-The most useful is D4: I built a page ranker, measured it against the labelled
-set, found it ranked the pages carrying the headline claims in the *bottom
-decile*, and deleted it.
+**The decision log is `docs/DECISIONS.md`**, 29 decisions with what each cost. My
+favourite is D4: I built a page ranker, measured it, found it put the pages
+carrying the headline claims in the *bottom decile*, and deleted it.
 
-**Reading the code.** `tieout/reason/compare.py` is about 150 lines and holds
-the whole classification logic. `tieout/normalize/` is where the real difficulty
-lives.
+**Reading the code.** `tieout/reason/compare.py` is about 150 lines and holds the
+whole classification logic. `tieout/normalize/` is where the real difficulty lives.
 
 **Everything is inspectable without the UI:**
 
