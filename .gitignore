@@ -21,3 +21,6 @@ data/pages/
 
 # stray artefact from an early path-traversal test; never part of the project
 evil.pdf
+
+# editor / agent tooling, never part of the project
+.claude/
